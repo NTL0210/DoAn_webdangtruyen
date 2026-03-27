@@ -102,4 +102,12 @@ const restrictTo = (...roles) => {
   };
 };
 
-module.exports = { protect, optionalProtect, restrictTo };
+/**
+ * requireModeratorOrAdmin middleware
+ *
+ * Convenience middleware for moderation endpoints.
+ * Allows only users with role "moderator" or "admin".
+ */
+const requireModeratorOrAdmin = restrictTo('moderator', 'admin');
+
+module.exports = { protect, optionalProtect, restrictTo, requireModeratorOrAdmin };
