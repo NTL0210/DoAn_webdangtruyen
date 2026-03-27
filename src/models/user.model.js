@@ -55,6 +55,18 @@ const userSchema = new mongoose.Schema(
       default: '',
     },
 
+    followersCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
+    followingCount: {
+      type: Number,
+      default: 0,
+      min: 0,
+    },
+
     // ── Permissions ──────────────────────────────────────────────────────────
     role: {
       type: String,
@@ -94,6 +106,8 @@ userSchema.methods.toPublicProfile = function () {
     displayName: this.displayName,
     avatarUrl: this.avatarUrl,
     bio: this.bio,
+    followersCount: this.followersCount,
+    followingCount: this.followingCount,
     role: this.role,
     createdAt: this.createdAt,
   };

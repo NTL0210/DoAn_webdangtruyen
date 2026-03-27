@@ -53,6 +53,12 @@ const formatPost = (post) => {
 /**
  * POST /api/posts
  * Create a new post for the currently authenticated user.
+ * 
+ * All new posts are created in "draft" status.
+ * Status transitions must use dedicated endpoints:
+ * - POST /api/posts/:id/submit (draft/rejected -> pending)
+ * - PATCH /api/admin/posts/:id/approve (pending -> approved)
+ * - PATCH /api/admin/posts/:id/reject (pending -> rejected)
  */
 const createPost = asyncHandler(async (req, res) => {
   const { type, title, summary, content, images, tags, status } = req.body;
@@ -64,17 +70,15 @@ const createPost = asyncHandler(async (req, res) => {
     });
   }
 
-  // Normal users should not be able to mark their own content as approved/rejected.
-  const allowedOwnerStatuses = ['draft', 'pending'];
-  const nextStatus = status || 'draft';
-
-  if (!allowedOwnerStatuses.includes(nextStatus)) {
+  // Reject any attempt to set status on creation.
+  if (status !== undefined && status !== 'draft') {
     return res.status(400).json({
       success: false,
-      message: 'You can only create posts with status draft or pending.',
+      message: 'Posts are always created in "draft" status. Use POST /api/posts/:id/submit to move to pending.',
     });
   }
 
+  // Always create posts as draft.
   const post = await Post.create({
     author: req.user._id,
     type,
@@ -83,8 +87,8 @@ const createPost = asyncHandler(async (req, res) => {
     content: content || '',
     images: normalizeStringArray(images),
     tags: normalizeStringArray(tags),
-    status: nextStatus,
-    publishedAt: nextStatus === 'approved' ? new Date() : null,
+    status: 'draft',
+    publishedAt: null,
   });
 
   const createdPost = await Post.findById(post._id).populate('author', 'username displayName avatarUrl');
@@ -98,19 +102,79 @@ const createPost = asyncHandler(async (req, res) => {
 
 /**
  * GET /api/posts
- * Public feed: only approved and non-deleted posts are returned.
+ * Public feed with search, filtering, sorting, and pagination.
+ * 
+ * Query parameters:
+ *   - search: search by title, summary, or content
+ *   - tag: filter by a single tag name
+ *   - sort: 'newest' (default) or 'oldest'
+ *   - page: page number (default 1)
+ *   - limit: posts per page (default 10, max 50)
+ * 
+ * Examples:
+ *   GET /api/posts
+ *   GET /api/posts?search=romance
+ *   GET /api/posts?tag=fantasy&page=2
+ *   GET /api/posts?search=art&limit=20
  */
 const getPublicPosts = asyncHandler(async (req, res) => {
-  const posts = await Post.find({
+  const { search, tag, sort = 'newest', page = 1, limit = 10 } = req.query;
+
+  // Validate and sanitize pagination parameters
+  const pageNum = Math.max(1, parseInt(page, 10) || 1);
+  const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 10));
+  const skip = (pageNum - 1) * limitNum;
+
+  // Build the base query for approved, non-deleted posts
+  let query = Post.find({
     status: 'approved',
     isDeleted: false,
-  })
+  });
+
+  // Add full-text search if provided
+  if (search && search.trim()) {
+    query = query.find({
+      $text: { $search: search.trim() },
+    });
+  }
+
+  // Add tag filter if provided
+  if (tag && tag.trim()) {
+    query = query.find({
+      tags: { $in: [tag.trim()] },
+    });
+  }
+
+  // Determine sort order
+  const sortOrder = sort === 'oldest' ? 1 : -1;
+
+  // Execute query with populate, sort, skip, and limit
+  const posts = await query
     .populate('author', 'username displayName avatarUrl')
-    .sort({ publishedAt: -1, createdAt: -1 });
+    .sort({ publishedAt: sortOrder, createdAt: sortOrder })
+    .skip(skip)
+    .limit(limitNum);
+
+  // Get total count for pagination metadata
+  const totalCount = await Post.countDocuments({
+    status: 'approved',
+    isDeleted: false,
+    ...(search && search.trim() && { $text: { $search: search.trim() } }),
+    ...(tag && tag.trim() && { tags: { $in: [tag.trim()] } }),
+  });
+
+  const totalPages = Math.ceil(totalCount / limitNum);
 
   res.status(200).json({
     success: true,
-    count: posts.length,
+    pagination: {
+      currentPage: pageNum,
+      totalPages,
+      limit: limitNum,
+      totalCount,
+      hasNextPage: pageNum < totalPages,
+      hasPrevPage: pageNum > 1,
+    },
     posts: posts.map(formatPost),
   });
 });
@@ -146,10 +210,23 @@ const getPostById = asyncHandler(async (req, res) => {
 
 /**
  * PUT /api/posts/:id
- * Owners can update only their own non-deleted posts.
+ * Owners can update their own posts: type, title, summary, content, images, tags.
+ * 
+ * Status cannot be changed through PUT. Use dedicated status transition endpoints:
+ * - POST /api/posts/:id/submit (draft/rejected -> pending)
+ * - PATCH /api/admin/posts/:id/approve (pending -> approved)
+ * - PATCH /api/admin/posts/:id/reject (pending -> rejected)
  */
 const updatePost = asyncHandler(async (req, res) => {
   const { type, title, summary, content, images, tags, status } = req.body;
+
+  // Reject any attempt to change status through PUT.
+  if (status !== undefined) {
+    return res.status(400).json({
+      success: false,
+      message: 'Status cannot be changed through this endpoint. Use POST /api/posts/:id/submit to request review.',
+    });
+  }
 
   if (type !== undefined) {
     req.post.type = type;
@@ -173,20 +250,6 @@ const updatePost = asyncHandler(async (req, res) => {
 
   if (tags !== undefined) {
     req.post.tags = normalizeStringArray(tags);
-  }
-
-  if (status !== undefined) {
-    const allowedOwnerStatuses = ['draft', 'pending'];
-
-    if (!allowedOwnerStatuses.includes(status)) {
-      return res.status(400).json({
-        success: false,
-        message: 'You can only update a post to draft or pending status.',
-      });
-    }
-
-    req.post.status = status;
-    req.post.publishedAt = null;
   }
 
   const updatedPost = await req.post.save();

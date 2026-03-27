@@ -103,8 +103,14 @@ const postSchema = new mongoose.Schema(
   }
 );
 
-// Helpful compound index for public listing queries
-postSchema.index({ status: 1, isDeleted: 1, createdAt: -1 });
+// Compound index for public listing queries
+postSchema.index({ status: 1, isDeleted: 1, publishedAt: -1, createdAt: -1 });
+
+// Index on tags for filtering by tag
+postSchema.index({ tags: 1 });
+
+// Text index for full-text search on title, summary, content
+postSchema.index({ title: 'text', summary: 'text', content: 'text' });
 
 // Format a safe JSON response shape for the API
 postSchema.methods.toPublicJSON = function () {
