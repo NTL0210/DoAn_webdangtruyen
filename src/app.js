@@ -4,10 +4,12 @@ const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
 const cookieParser = require('cookie-parser');
+const swaggerUi = require('swagger-ui-express');
 
 const routes = require('./routes');
 const notFound = require('./middlewares/notFound');
 const errorHandler = require('./middlewares/errorHandler');
+const swaggerSpec = require('./config/swagger');
 
 const app = express();
 
@@ -40,6 +42,21 @@ app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser()); // required to read httpOnly cookies in logout
+
+// ─── Swagger Documentation ───────────────────────────────────────────────────
+// /api-docs serves the interactive Swagger UI.
+// /api-docs.json exposes the raw OpenAPI document for tools like Postman.
+app.get('/api-docs.json', (req, res) => {
+  res.setHeader('Content-Type', 'application/json');
+  res.send(swaggerSpec);
+});
+
+app.use('/api-docs', swaggerUi.serve, swaggerUi.setup(swaggerSpec, {
+  explorer: true,
+  swaggerOptions: {
+    persistAuthorization: true,
+  },
+}));
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
 app.use('/api', routes);
