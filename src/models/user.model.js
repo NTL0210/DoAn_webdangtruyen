@@ -49,6 +49,12 @@ const userSchema = new mongoose.Schema(
       default: '',
     },
 
+    // Cloudinary public_id — used to delete the old image before uploading a new one
+    avatarPublicId: {
+      type: String,
+      default: '',
+    },
+
     bio: {
       type: String,
       maxlength: [300, 'Bio cannot exceed 300 characters'],

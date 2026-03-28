@@ -4,6 +4,7 @@ const {
   approvePost,
   rejectPost,
 } = require('../controllers/moderation.controller');
+const { getReports, reviewReport } = require('../controllers/report.controller');
 const { protect, requireModeratorOrAdmin } = require('../middlewares/auth.middleware');
 const { validatePostId, loadPost } = require('../middlewares/post.middleware');
 
@@ -20,5 +21,11 @@ router.patch('/posts/:id/approve', validatePostId, loadPost, approvePost);
 
 // PATCH /api/admin/posts/:id/reject
 router.patch('/posts/:id/reject', validatePostId, loadPost, rejectPost);
+
+// GET /api/admin/reports
+router.get('/reports', getReports);
+
+// PATCH /api/admin/reports/:id/review
+router.patch('/reports/:id/review', reviewReport);
 
 module.exports = router;

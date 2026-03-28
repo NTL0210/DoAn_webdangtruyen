@@ -1,4 +1,5 @@
 const Notification = require('../models/notification.model');
+const { emitNotificationToUser } = require('../socket/socket');
 
 /**
  * Create a notification unless the sender and recipient are the same user.
@@ -13,7 +14,7 @@ const createNotification = async ({ recipient, sender, type, post = null, commen
     return null;
   }
 
-  return Notification.create({
+  const notification = await Notification.create({
     recipient,
     sender,
     type,
@@ -21,6 +22,22 @@ const createNotification = async ({ recipient, sender, type, post = null, commen
     comment,
     message,
   });
+
+  // Realtime delivery: still DB-backed first, then emit to user room.
+  emitNotificationToUser(recipient, {
+    id: notification._id,
+    recipient: notification.recipient,
+    sender: notification.sender,
+    type: notification.type,
+    post: notification.post,
+    comment: notification.comment,
+    message: notification.message,
+    isRead: notification.isRead,
+    readAt: notification.readAt,
+    createdAt: notification.createdAt,
+  });
+
+  return notification;
 };
 
 module.exports = { createNotification };

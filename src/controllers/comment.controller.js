@@ -3,6 +3,7 @@ const Comment = require('../models/comment.model');
 const Post = require('../models/post.model');
 const asyncHandler = require('../utils/asyncHandler');
 const { createNotification } = require('../utils/notification.service');
+const MAX_COMMENT_LENGTH = 1000;
 
 /**
  * Convert comment document to a clean API response object.
@@ -62,6 +63,13 @@ const createComment = asyncHandler(async (req, res) => {
     return res.status(400).json({
       success: false,
       message: 'Comment content is required.',
+    });
+  }
+
+  if (content.length > MAX_COMMENT_LENGTH) {
+    return res.status(400).json({
+      success: false,
+      message: `Comment content cannot exceed ${MAX_COMMENT_LENGTH} characters.`,
     });
   }
 

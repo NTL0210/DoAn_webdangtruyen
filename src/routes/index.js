@@ -9,6 +9,7 @@ const commentRoute = require('./comment.route');
 const bookmarkRoute = require('./bookmark.route');
 const followRoute = require('./follow.route');
 const notificationRoute = require('./notification.route');
+const readingHistoryRoute = require('./readingHistory.route');
 
 const router = express.Router();
 
@@ -23,6 +24,7 @@ router.use('/', commentRoute);
 router.use('/', bookmarkRoute);
 router.use('/', followRoute);
 router.use('/', notificationRoute);
+router.use('/', readingHistoryRoute);
 
 // Add more feature routes here as the project grows:
 // router.use('/comics', require('./comic.route'));
