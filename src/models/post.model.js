@@ -43,14 +43,15 @@ const postSchema = new mongoose.Schema(
       default: '',
     },
 
-    // List of image URLs attached to the post
+    // Images attached to the post — each entry holds the Cloudinary URL and public_id
     images: {
-      type: [String],
+      type: [
+        {
+          url: { type: String, required: true },
+          publicId: { type: String, default: '' },
+        },
+      ],
       default: [],
-      validate: {
-        validator: (value) => Array.isArray(value),
-        message: 'Images must be an array of strings',
-      },
     },
 
     // Simple searchable labels like ["fantasy", "fanart"]

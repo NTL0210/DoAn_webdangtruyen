@@ -2,6 +2,8 @@ const jwt = require('jsonwebtoken');
 const User = require('../models/user.model');
 const asyncHandler = require('../utils/asyncHandler');
 const { jwtSecret, jwtExpiresIn } = require('../config/env');
+const EMAIL_REGEX = /^\S+@\S+\.\S+$/;
+const MIN_PASSWORD_LENGTH = 6;
 
 // ── Helper: Sign a JWT for a given user ID ───────────────────────────────────
 const signToken = (userId) => {
@@ -27,23 +29,39 @@ const sendTokenResponse = (user, statusCode, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const register = asyncHandler(async (req, res) => {
   const { username, email, password, displayName } = req.body;
+  const normalizedUsername = typeof username === 'string' ? username.trim() : '';
+  const normalizedEmail = typeof email === 'string' ? email.trim().toLowerCase() : '';
 
   // 1. Validate that required fields are present
-  if (!username || !email || !password) {
+  if (!normalizedUsername || !normalizedEmail || !password) {
     return res.status(400).json({
       success: false,
       message: 'username, email, and password are required.',
     });
   }
 
+  if (!EMAIL_REGEX.test(normalizedEmail)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Please provide a valid email address.',
+    });
+  }
+
+  if (String(password).length < MIN_PASSWORD_LENGTH) {
+    return res.status(400).json({
+      success: false,
+      message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+    });
+  }
+
   // 2. Check for existing username or email (case-insensitive email handled
   //    by the model's lowercase: true option)
   const existingUser = await User.findOne({
-    $or: [{ email }, { username }],
+    $or: [{ email: normalizedEmail }, { username: normalizedUsername }],
   });
 
   if (existingUser) {
-    const field = existingUser.email === email.toLowerCase() ? 'email' : 'username';
+    const field = existingUser.email === normalizedEmail ? 'email' : 'username';
     return res.status(409).json({
       success: false,
       message: `An account with that ${field} already exists.`,
@@ -52,11 +70,11 @@ const register = asyncHandler(async (req, res) => {
 
   // 3. Create the user — password is hashed automatically by the pre-save hook
   const user = await User.create({
-    username,
-    email,
+    username: normalizedUsername,
+    email: normalizedEmail,
     password,
     // Use username as display name if not provided
-    displayName: displayName || username,
+    displayName: displayName || normalizedUsername,
   });
 
   // 4. Respond with JWT + public profile
@@ -68,21 +86,31 @@ const register = asyncHandler(async (req, res) => {
 // ─────────────────────────────────────────────────────────────────────────────
 const login = asyncHandler(async (req, res) => {
   const { identifier, password } = req.body;
+  const normalizedIdentifier = typeof identifier === 'string' ? identifier.trim() : '';
   // "identifier" accepts either an email address or a username
 
   // 1. Validate input
-  if (!identifier || !password) {
+  if (!normalizedIdentifier || !password) {
     return res.status(400).json({
       success: false,
       message: 'Please provide your email/username and password.',
     });
   }
 
+  if (String(password).length < MIN_PASSWORD_LENGTH) {
+    return res.status(400).json({
+      success: false,
+      message: `Password must be at least ${MIN_PASSWORD_LENGTH} characters.`,
+    });
+  }
+
   // 2. Find the user by email or username
   //    We use select('+password') because the password field has select: false
   //    in the schema — it's excluded from queries by default.
-  const isEmail = identifier.includes('@');
-  const query = isEmail ? { email: identifier.toLowerCase() } : { username: identifier };
+  const isEmail = normalizedIdentifier.includes('@');
+  const query = isEmail
+    ? { email: normalizedIdentifier.toLowerCase() }
+    : { username: normalizedIdentifier };
 
   const user = await User.findOne(query).select('+password');
 

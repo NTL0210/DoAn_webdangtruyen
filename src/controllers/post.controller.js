@@ -1,5 +1,6 @@
 const Post = require('../models/post.model');
 const asyncHandler = require('../utils/asyncHandler');
+const { uploadBufferToCloudinary } = require('../utils/cloudinary.service');
 
 /**
  * Small helper to clean string arrays like tags/images.
@@ -14,6 +15,10 @@ const normalizeStringArray = (value) => {
     .map((item) => String(item).trim())
     .filter(Boolean);
 };
+
+const ALLOWED_POST_TYPES = ['story', 'artwork'];
+const MAX_POST_TITLE_LENGTH = 150;
+const MAX_POST_SUMMARY_LENGTH = 500;
 
 /**
  * Public shape used in API responses.
@@ -61,12 +66,44 @@ const formatPost = (post) => {
  * - PATCH /api/admin/posts/:id/reject (pending -> rejected)
  */
 const createPost = asyncHandler(async (req, res) => {
-  const { type, title, summary, content, images, tags, status } = req.body;
+  const { type, title, summary, content, tags, status } = req.body;
+  const cleanType = typeof type === 'string' ? type.trim() : '';
+  const cleanTitle = typeof title === 'string' ? title.trim() : '';
+  const cleanSummary = typeof summary === 'string' ? summary.trim() : '';
+  const cleanContent = typeof content === 'string' ? content.trim() : '';
 
-  if (!type || !title) {
+  if (!cleanType || !cleanTitle) {
     return res.status(400).json({
       success: false,
       message: 'type and title are required.',
+    });
+  }
+
+  if (!ALLOWED_POST_TYPES.includes(cleanType)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid post type. Use "story" or "artwork".',
+    });
+  }
+
+  if (cleanTitle.length > MAX_POST_TITLE_LENGTH) {
+    return res.status(400).json({
+      success: false,
+      message: `Title cannot exceed ${MAX_POST_TITLE_LENGTH} characters.`,
+    });
+  }
+
+  if (cleanSummary.length > MAX_POST_SUMMARY_LENGTH) {
+    return res.status(400).json({
+      success: false,
+      message: `Summary cannot exceed ${MAX_POST_SUMMARY_LENGTH} characters.`,
+    });
+  }
+
+  if (cleanType === 'story' && !cleanContent) {
+    return res.status(400).json({
+      success: false,
+      message: 'Story posts require non-empty content.',
     });
   }
 
@@ -78,14 +115,13 @@ const createPost = asyncHandler(async (req, res) => {
     });
   }
 
-  // Always create posts as draft.
+  // Always create posts as draft. Images are managed via POST /api/posts/:id/images.
   const post = await Post.create({
     author: req.user._id,
-    type,
-    title,
-    summary: summary || '',
-    content: content || '',
-    images: normalizeStringArray(images),
+    type: cleanType,
+    title: cleanTitle,
+    summary: cleanSummary,
+    content: cleanContent,
     tags: normalizeStringArray(tags),
     status: 'draft',
     publishedAt: null,
@@ -218,7 +254,7 @@ const getPostById = asyncHandler(async (req, res) => {
  * - PATCH /api/admin/posts/:id/reject (pending -> rejected)
  */
 const updatePost = asyncHandler(async (req, res) => {
-  const { type, title, summary, content, images, tags, status } = req.body;
+  const { type, title, summary, content, tags, status } = req.body;
 
   // Reject any attempt to change status through PUT.
   if (status !== undefined) {
@@ -229,27 +265,62 @@ const updatePost = asyncHandler(async (req, res) => {
   }
 
   if (type !== undefined) {
-    req.post.type = type;
+    const cleanType = typeof type === 'string' ? type.trim() : '';
+    if (!ALLOWED_POST_TYPES.includes(cleanType)) {
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid post type. Use "story" or "artwork".',
+      });
+    }
+    req.post.type = cleanType;
   }
 
   if (title !== undefined) {
-    req.post.title = title;
+    const cleanTitle = typeof title === 'string' ? title.trim() : '';
+    if (!cleanTitle) {
+      return res.status(400).json({
+        success: false,
+        message: 'Title cannot be empty.',
+      });
+    }
+    if (cleanTitle.length > MAX_POST_TITLE_LENGTH) {
+      return res.status(400).json({
+        success: false,
+        message: `Title cannot exceed ${MAX_POST_TITLE_LENGTH} characters.`,
+      });
+    }
+    req.post.title = cleanTitle;
   }
 
   if (summary !== undefined) {
-    req.post.summary = summary;
+    const cleanSummary = typeof summary === 'string' ? summary.trim() : '';
+    if (cleanSummary.length > MAX_POST_SUMMARY_LENGTH) {
+      return res.status(400).json({
+        success: false,
+        message: `Summary cannot exceed ${MAX_POST_SUMMARY_LENGTH} characters.`,
+      });
+    }
+    req.post.summary = cleanSummary;
   }
 
   if (content !== undefined) {
-    req.post.content = content;
+    req.post.content = typeof content === 'string' ? content.trim() : '';
   }
 
-  if (images !== undefined) {
-    req.post.images = normalizeStringArray(images);
-  }
+  // Images are managed via POST /api/posts/:id/images — not through PUT.
 
   if (tags !== undefined) {
     req.post.tags = normalizeStringArray(tags);
+  }
+
+  if (req.post.type === 'story') {
+    const cleanContent = typeof req.post.content === 'string' ? req.post.content.trim() : '';
+    if (!cleanContent) {
+      return res.status(400).json({
+        success: false,
+        message: 'Story posts require non-empty content.',
+      });
+    }
   }
 
   const updatedPost = await req.post.save();
@@ -292,6 +363,25 @@ const submitPostForReview = asyncHandler(async (req, res) => {
     });
   }
 
+  if (req.post.type === 'story') {
+    const cleanContent = typeof req.post.content === 'string' ? req.post.content.trim() : '';
+    if (!cleanContent) {
+      return res.status(400).json({
+        success: false,
+        message: 'Story posts must include non-empty content before submission.',
+      });
+    }
+  }
+
+  if (req.post.type === 'artwork') {
+    if (!Array.isArray(req.post.images) || req.post.images.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'Artwork posts must include at least one uploaded image before submission.',
+      });
+    }
+  }
+
   req.post.status = 'pending';
   req.post.publishedAt = null;
 
@@ -302,6 +392,57 @@ const submitPostForReview = asyncHandler(async (req, res) => {
     success: true,
     message: 'Post submitted for review successfully.',
     post: formatPost(updatedPost),
+  });
+});
+
+/**
+ * POST /api/posts/:id/images
+ * Upload up to 5 images for a post and append them to post.images.
+ *
+ * Flow:
+ *  1. multer (postImagesUpload) has already validated file type, size, and count.
+ *  2. All buffers are uploaded to Cloudinary in parallel.
+ *  3. Results ({ url, publicId }) are pushed into post.images.
+ *  4. The updated post is returned.
+ */
+const uploadPostImages = asyncHandler(async (req, res) => {
+  const { post } = req; // populated by loadPost middleware
+
+  if (!req.files || req.files.length === 0) {
+    return res.status(400).json({
+      success: false,
+      message: 'No images uploaded. Attach image files using the "images" field.',
+    });
+  }
+
+  // Upload all received buffers to Cloudinary in parallel for speed
+  const uploadResults = await Promise.all(
+    req.files.map((file) =>
+      uploadBufferToCloudinary(file.buffer, {
+        folder: `webtruyen/posts/${post._id}`,
+        resource_type: 'image',
+        transformation: [
+          // Auto-optimize quality and format (e.g. serve WebP where supported)
+          { quality: 'auto', fetch_format: 'auto' },
+        ],
+      })
+    )
+  );
+
+  // Map Cloudinary result to our schema shape and append to the existing images array
+  const newImages = uploadResults.map((result) => ({
+    url: result.secure_url,
+    publicId: result.public_id,
+  }));
+
+  post.images.push(...newImages);
+  await post.save();
+  await post.populate('author', 'username displayName avatarUrl');
+
+  res.status(200).json({
+    success: true,
+    message: `${newImages.length} image(s) uploaded successfully.`,
+    post: formatPost(post),
   });
 });
 
@@ -332,4 +473,5 @@ module.exports = {
   deletePost,
   submitPostForReview,
   getMyPosts,
+  uploadPostImages,
 };

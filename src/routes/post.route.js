@@ -6,9 +6,12 @@ const {
   updatePost,
   deletePost,
   submitPostForReview,
+  uploadPostImages,
 } = require('../controllers/post.controller');
+const { createReport } = require('../controllers/report.controller');
 const { protect, optionalProtect } = require('../middlewares/auth.middleware');
 const { validatePostId, loadPost, requirePostOwner } = require('../middlewares/post.middleware');
+const { postImagesUpload } = require('../middlewares/upload.middleware');
 
 const router = express.Router();
 
@@ -27,6 +30,13 @@ router.put('/:id', protect, validatePostId, loadPost, requirePostOwner, updatePo
 
 // POST /api/posts/:id/submit - owner submits draft/rejected post for review
 router.post('/:id/submit', protect, validatePostId, loadPost, requirePostOwner, submitPostForReview);
+
+// POST /api/posts/:id/images - owner uploads images; appends to post.images array
+// Chain: protect → validatePostId → loadPost (rejects deleted) → requirePostOwner → postImagesUpload → controller
+router.post('/:id/images', protect, validatePostId, loadPost, requirePostOwner, postImagesUpload, uploadPostImages);
+
+// POST /api/posts/:id/report - authenticated user reports an approved post
+router.post('/:id/report', protect, createReport);
 
 // DELETE /api/posts/:id - only the owner can soft-delete
 router.delete('/:id', protect, validatePostId, loadPost, requirePostOwner, deletePost);
