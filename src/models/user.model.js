@@ -73,6 +73,15 @@ const userSchema = new mongoose.Schema(
       min: 0,
     },
 
+    // Refresh token hash — stored so logout can invalidate the token server-side.
+    // The plain token lives only in the httpOnly cookie on the client.
+    // select: false ensures this never leaks in normal query results.
+    refreshTokenHash: {
+      type: String,
+      select: false,
+      default: null,
+    },
+
     // ── Permissions ──────────────────────────────────────────────────────────
     role: {
       type: String,

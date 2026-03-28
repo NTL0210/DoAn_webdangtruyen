@@ -3,6 +3,7 @@ const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
 const rateLimit = require('express-rate-limit');
+const cookieParser = require('cookie-parser');
 
 const routes = require('./routes');
 const notFound = require('./middlewares/notFound');
@@ -35,9 +36,10 @@ app.use('/api', limiter);
 // ─── Request Logging ─────────────────────────────────────────────────────────
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-// ─── Body Parsing ─────────────────────────────────────────────────────────────
+// ─── Body Parsing & Cookie Parsing ──────────────────────────────────────────
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser()); // required to read httpOnly cookies in logout
 
 // ─── API Routes ───────────────────────────────────────────────────────────────
 app.use('/api', routes);
