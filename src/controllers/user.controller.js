@@ -1,5 +1,8 @@
+const mongoose = require('mongoose');
 const cloudinary = require('../config/cloudinary');
 const User = require('../models/user.model');
+const Post = require('../models/post.model');
+const Follow = require('../models/follow.model');
 const asyncHandler = require('../utils/asyncHandler');
 const { uploadBufferToCloudinary } = require('../utils/cloudinary.service');
 
@@ -145,4 +148,75 @@ const updateMyProfile = asyncHandler(async (req, res) => {
   });
 });
 
-module.exports = { uploadAvatar, updateMyProfile };
+/**
+ * getPublicUserProfile
+ *
+ * GET /api/users/:id
+ * Public endpoint for viewing a user's public profile.
+ *
+ * Logic:
+ *  1. Validate that :id is a valid MongoDB ObjectId.
+ *  2. Fetch only safe public fields from the user document.
+ *  3. Count the user's public posts (approved + not deleted).
+ *  4. If a token was provided and decoded by optionalProtect, include isFollowing.
+ */
+const getPublicUserProfile = asyncHandler(async (req, res) => {
+  const { id } = req.params;
+
+  // Reject invalid MongoDB ids before querying the database.
+  if (!mongoose.Types.ObjectId.isValid(id)) {
+    return res.status(400).json({
+      success: false,
+      message: 'Invalid user id.',
+    });
+  }
+
+  // Select only the fields that are safe to expose publicly.
+  const user = await User.findById(id).select(
+    'username displayName bio avatarUrl followersCount followingCount'
+  );
+
+  if (!user) {
+    return res.status(404).json({
+      success: false,
+      message: 'User not found.',
+    });
+  }
+
+  // Count public posts only. Draft/pending/rejected posts stay private.
+  const postsCountPromise = Post.countDocuments({
+    author: user._id,
+    status: 'approved',
+    isDeleted: false,
+  });
+
+  // Only compute follow state when the request includes a valid user via optionalProtect.
+  const isFollowingPromise = req.user
+    ? Follow.exists({ follower: req.user._id, following: user._id })
+    : Promise.resolve(null);
+
+  const [postsCount, followRelation] = await Promise.all([postsCountPromise, isFollowingPromise]);
+
+  const publicProfile = {
+    _id: user._id,
+    username: user.username,
+    displayName: user.displayName,
+    bio: user.bio,
+    avatarUrl: user.avatarUrl,
+    followersCount: user.followersCount,
+    followingCount: user.followingCount,
+    postsCount,
+  };
+
+  // Optional extra field: only include it when the requester is authenticated.
+  if (req.user) {
+    publicProfile.isFollowing = Boolean(followRelation);
+  }
+
+  return res.status(200).json({
+    success: true,
+    data: { user: publicProfile },
+  });
+});
+
+module.exports = { uploadAvatar, updateMyProfile, getPublicUserProfile };

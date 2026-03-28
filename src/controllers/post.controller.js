@@ -138,76 +138,100 @@ const createPost = asyncHandler(async (req, res) => {
 
 /**
  * GET /api/posts
- * Public feed with search, filtering, sorting, and pagination.
- * 
+ * Public feed with search, tag filter, sort options, and pagination.
+ *
  * Query parameters:
- *   - search: search by title, summary, or content
- *   - tag: filter by a single tag name
- *   - sort: 'newest' (default) or 'oldest'
- *   - page: page number (default 1)
- *   - limit: posts per page (default 10, max 50)
- * 
+ *   search   - free-text search across title, summary, content (case-insensitive regex)
+ *   tag      - filter by a single tag string, e.g. ?tag=fantasy
+ *   sort     - "newest" (default) | "popular" | "trending"
+ *                newest   → sort by createdAt desc
+ *                popular  → sort by bookmarksCount, commentsCount, viewsCount desc
+ *                trending → recent posts (last 7 days) ranked by engagement score
+ *   page     - page number, default 1
+ *   limit    - posts per page, default 10, max 50
+ *
  * Examples:
  *   GET /api/posts
  *   GET /api/posts?search=romance
  *   GET /api/posts?tag=fantasy&page=2
- *   GET /api/posts?search=art&limit=20
+ *   GET /api/posts?sort=popular
+ *   GET /api/posts?sort=trending&limit=5
  */
 const getPublicPosts = asyncHandler(async (req, res) => {
   const { search, tag, sort = 'newest', page = 1, limit = 10 } = req.query;
 
-  // Validate and sanitize pagination parameters
-  const pageNum = Math.max(1, parseInt(page, 10) || 1);
+  // ── Sanitize pagination values ───────────────────────────────────────────
+  // parseInt returns NaN for non-numeric strings; fall back to the default.
+  const pageNum  = Math.max(1, parseInt(page,  10) || 1);
   const limitNum = Math.min(50, Math.max(1, parseInt(limit, 10) || 10));
-  const skip = (pageNum - 1) * limitNum;
+  const skip     = (pageNum - 1) * limitNum;
 
-  // Build the base query for approved, non-deleted posts
-  let query = Post.find({
-    status: 'approved',
+  // ── Build the filter object ──────────────────────────────────────────────
+  // Always restrict to approved, non-deleted documents.
+  const filter = {
+    status:    'approved',
     isDeleted: false,
-  });
+  };
 
-  // Add full-text search if provided
+  // Text search: use a case-insensitive regex so we don't rely on a text index.
+  // This works out of the box without extra index setup, which is beginner-friendly.
+  // Trade-off: for very large collections a $text index would be faster.
   if (search && search.trim()) {
-    query = query.find({
-      $text: { $search: search.trim() },
-    });
+    const escapedSearch = search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    const regex = new RegExp(escapedSearch, 'i');
+    filter.$or = [
+      { title:   regex },
+      { summary: regex },
+      { content: regex },
+    ];
   }
 
-  // Add tag filter if provided
+  // Tag filter: tags is an array of strings on each post document.
   if (tag && tag.trim()) {
-    query = query.find({
-      tags: { $in: [tag.trim()] },
-    });
+    filter.tags = tag.trim();
   }
 
-  // Determine sort order
-  const sortOrder = sort === 'oldest' ? 1 : -1;
+  // ── Build the sort object ────────────────────────────────────────────────
+  let sortObj;
 
-  // Execute query with populate, sort, skip, and limit
-  const posts = await query
-    .populate('author', 'username displayName avatarUrl')
-    .sort({ publishedAt: sortOrder, createdAt: sortOrder })
-    .skip(skip)
-    .limit(limitNum);
+  if (sort === 'popular') {
+    // Rank by engagement metrics in order of significance.
+    sortObj = { bookmarksCount: -1, commentsCount: -1, viewsCount: -1 };
 
-  // Get total count for pagination metadata
-  const totalCount = await Post.countDocuments({
-    status: 'approved',
-    isDeleted: false,
-    ...(search && search.trim() && { $text: { $search: search.trim() } }),
-    ...(tag && tag.trim() && { tags: { $in: [tag.trim()] } }),
-  });
+  } else if (sort === 'trending') {
+    // Trending: only look at posts published in the last 7 days, then rank by engagement.
+    // This is a simple but effective heuristic — no aggregation pipeline required.
+    const sevenDaysAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    // Narrow the filter to recent posts only for the trending window.
+    filter.publishedAt = { $gte: sevenDaysAgo };
+    sortObj = { bookmarksCount: -1, commentsCount: -1, viewsCount: -1, publishedAt: -1 };
 
-  const totalPages = Math.ceil(totalCount / limitNum);
+  } else {
+    // Default: "newest" — most recently created first.
+    sortObj = { createdAt: -1 };
+  }
+
+  // ── Execute both queries in parallel for performance ─────────────────────
+  // One query fetches the page of posts; the other gets the total count for metadata.
+  const [posts, total] = await Promise.all([
+    Post.find(filter)
+      .populate('author', 'username displayName avatarUrl')
+      .sort(sortObj)
+      .skip(skip)
+      .limit(limitNum),
+
+    Post.countDocuments(filter),
+  ]);
+
+  const totalPages = Math.ceil(total / limitNum);
 
   res.status(200).json({
     success: true,
     pagination: {
-      currentPage: pageNum,
+      page:       pageNum,
+      limit:      limitNum,
+      total,
       totalPages,
-      limit: limitNum,
-      totalCount,
       hasNextPage: pageNum < totalPages,
       hasPrevPage: pageNum > 1,
     },
