@@ -92,6 +92,13 @@ export const env = {
     url: readTrimmedEnv('REDIS_URL'),
     connectTimeoutMs: parseIntegerEnv('REDIS_CONNECT_TIMEOUT_MS', 5000, { min: 1 })
   },
+  email: {
+    smtpHost: readTrimmedEnv('SMTP_HOST'),
+    smtpPort: parseIntegerEnv('SMTP_PORT', 587, { min: 1 }),
+    smtpUser: readTrimmedEnv('SMTP_USER'),
+    smtpPass: readTrimmedEnv('SMTP_PASS'),
+    fromAddress: readTrimmedEnv('EMAIL_FROM', 'no-reply@localhost')
+  },
   cache: {
     enabled: parseBooleanEnv('CACHE_ENABLED', true),
     defaultTtlSeconds: parseIntegerEnv('CACHE_DEFAULT_TTL_SECONDS', 60, { min: 1 }),

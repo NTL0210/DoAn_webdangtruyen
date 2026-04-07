@@ -103,6 +103,50 @@ export async function register(username, email, password) {
   return await response.json();
 }
 
+// Send verification OTP (resend)
+export async function sendVerificationOtp(email) {
+  const response = await fetch(`${API_URL}/api/auth/resend-verification`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email })
+  });
+
+  return await response.json();
+}
+
+// Verify email OTP
+export async function verifyEmailOtp(email, code) {
+  const response = await fetch(`${API_URL}/api/auth/verify-email`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, code })
+  });
+
+  return await response.json();
+}
+
+// Request password reset (send OTP)
+export async function requestPasswordReset(email) {
+  const response = await fetch(`${API_URL}/api/auth/request-password-reset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email })
+  });
+
+  return await response.json();
+}
+
+// Reset password using OTP
+export async function resetPassword(email, code, newPassword) {
+  const response = await fetch(`${API_URL}/api/auth/reset-password`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ email, code, newPassword })
+  });
+
+  return await response.json();
+}
+
 // Logout user
 export function logout() {
   localStorage.removeItem('token');
