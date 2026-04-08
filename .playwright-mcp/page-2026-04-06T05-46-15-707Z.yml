@@ -1,0 +1,156 @@
+- generic [ref=e2]:
+  - generic:
+    - img
+  - generic [ref=e4]:
+    - complementary [ref=e5]:
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - generic [ref=e8]:
+            - paragraph [ref=e9]: The Index
+            - paragraph [ref=e10]: Share Your Stories. Showcase Your Art.
+          - navigation [ref=e11]:
+            - link "Home" [ref=e12]:
+              - /url: /home
+              - img [ref=e13]
+              - generic [ref=e16]: Home
+            - link "Stories" [ref=e17]:
+              - /url: /stories
+              - img [ref=e18]
+              - generic [ref=e20]: Stories
+            - link "Artworks" [ref=e21]:
+              - /url: /artworks
+              - img [ref=e22]
+              - generic [ref=e26]: Artworks
+            - link "Notifications" [ref=e27]:
+              - /url: /notifications
+              - img [ref=e28]
+              - generic [ref=e31]: Notifications
+            - link "Create Story" [ref=e32]:
+              - /url: /create-story
+              - img [ref=e33]
+              - generic [ref=e36]: Create Story
+            - link "Create Artwork" [ref=e37]:
+              - /url: /create-artwork
+              - img [ref=e38]
+              - generic [ref=e41]: Create Artwork
+            - link "Saved" [ref=e42]:
+              - /url: /saved
+              - img [ref=e43]
+              - generic [ref=e45]: Saved
+            - link "My Profile" [ref=e46]:
+              - /url: /profile
+              - img [ref=e47]
+              - generic [ref=e51]: My Profile
+          - generic [ref=e53]:
+            - generic [ref=e54]: F
+            - generic [ref=e55]:
+              - paragraph [ref=e56]: flowcheck0601
+              - paragraph [ref=e57]: "@flowcheck0601"
+        - button "Logout" [ref=e59]
+    - generic [ref=e60]:
+      - banner [ref=e61]:
+        - generic [ref=e62]:
+          - paragraph [ref=e63]: The Index
+          - heading "Story Detail" [level=1] [ref=e64]
+        - link "Search creators, original stories, and art..." [ref=e66]:
+          - /url: /search
+          - img [ref=e67]
+          - generic [ref=e70]: Search creators, original stories, and art...
+        - generic [ref=e71]:
+          - link [ref=e72]:
+            - /url: /notifications
+            - img [ref=e73]
+          - button "Toggle theme" [ref=e76]:
+            - img [ref=e77]
+            - generic [ref=e79]: Toggle theme
+          - link "F flowcheck0601 @flowcheck0601" [ref=e80]:
+            - /url: /profile
+            - generic [ref=e81]: F
+            - generic [ref=e82]:
+              - paragraph [ref=e83]: flowcheck0601
+              - paragraph [ref=e84]: "@flowcheck0601"
+      - main [ref=e85]:
+        - generic [ref=e86]:
+          - generic [ref=e98]:
+            - generic [ref=e99]:
+              - generic [ref=e100]:
+                - text: Story
+                - generic [ref=e101]: 24 views
+                - text: 4/6/2026
+              - generic [ref=e102]:
+                - button "Like 0" [ref=e103]:
+                  - img [ref=e104]
+                  - text: Like
+                  - generic [ref=e106]: "0"
+                - button "Save story 0" [ref=e107]:
+                  - img [ref=e108]
+                  - text: Save story
+                  - generic [ref=e110]: "0"
+                - button "Report Post" [ref=e111]
+            - heading "Ngay kiem tra" [level=1] [ref=e112]
+            - generic [ref=e114]: By Duckk
+            - paragraph [ref=e115]: Kiem tra duoc 8,5d
+            - generic [ref=e117]: "#badday"
+            - separator [ref=e118]
+            - generic [ref=e120]: Thầy cho deadline sát giờ
+          - generic [ref=e121]:
+            - heading "Comments (2)" [level=2] [ref=e122]
+            - generic [ref=e123]:
+              - textbox "Write a comment..." [ref=e124]
+              - generic [ref=e125]:
+                - generic [ref=e126]: 0/1000
+                - button "Post Comment" [ref=e127]
+            - generic [ref=e128]:
+              - generic [ref=e129]:
+                - generic [ref=e130]:
+                  - generic [ref=e131]:
+                    - generic [ref=e132]: flowcheck0601
+                    - generic [ref=e133]: 4/6/2026, 12:44:40 PM
+                  - button "Delete" [ref=e134]
+                - paragraph [ref=e135]: sync-check-reconnect-20260406-0544
+              - generic [ref=e136]:
+                - generic [ref=e137]:
+                  - generic [ref=e138]:
+                    - generic [ref=e139]: flowcheck0601
+                    - generic [ref=e140]: 4/6/2026, 12:45:19 PM
+                  - button "Delete" [ref=e141]
+                - paragraph [ref=e142]: sync-check-offline-reconnect-20260406-0545
+          - button "← Back to Stories" [ref=e143]
+    - complementary [ref=e87]:
+      - generic [ref=e88]:
+        - generic [ref=e89]:
+          - heading "Trending Tags" [level=2] [ref=e90]
+          - link "View all" [ref=e91]:
+            - /url: /search?view=tags
+        - generic [ref=e92]:
+          - link "#newday" [ref=e144]:
+            - /url: /home?tag=newday
+          - link "#badday" [ref=e145]:
+            - /url: /home?tag=badday
+          - link "#tan" [ref=e146]:
+            - /url: /home?tag=tan
+          - link "#the" [ref=e147]:
+            - /url: /home?tag=the
+          - link "#newgay" [ref=e148]:
+            - /url: /home?tag=newgay
+      - generic [ref=e94]:
+        - heading "Popular Creators" [level=2] [ref=e95]
+        - generic [ref=e96]:
+          - link "Duckk Duckk @Duckk" [ref=e149]:
+            - /url: /profile/69cb3b9ace2544a3075038ca
+            - img "Duckk" [ref=e150]
+            - generic [ref=e151]:
+              - paragraph [ref=e152]: Duckk
+              - paragraph [ref=e153]: "@Duckk"
+          - link "L Loc @Loc" [ref=e154]:
+            - /url: /profile/69cb7399b6a8ad177acac812
+            - generic [ref=e155]: L
+            - generic [ref=e156]:
+              - paragraph [ref=e157]: Loc
+              - paragraph [ref=e158]: "@Loc"
+          - link "M ManhGay @ManhGay" [ref=e159]:
+            - /url: /profile/69cd1702be1808ec9561b4dd
+            - generic [ref=e160]: M
+            - generic [ref=e161]:
+              - paragraph [ref=e162]: ManhGay
+              - paragraph [ref=e163]: "@ManhGay"

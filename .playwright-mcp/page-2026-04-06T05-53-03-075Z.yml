@@ -1,0 +1,186 @@
+- generic [ref=e2]:
+  - generic:
+    - img
+  - generic [ref=e4]:
+    - complementary [ref=e5]:
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - generic [ref=e8]:
+            - paragraph [ref=e9]: The Index
+            - paragraph [ref=e10]: Share Your Stories. Showcase Your Art.
+          - navigation [ref=e11]:
+            - link "Home" [ref=e12]:
+              - /url: /home
+              - img [ref=e13]
+              - generic [ref=e16]: Home
+            - link "Stories" [ref=e17]:
+              - /url: /stories
+              - img [ref=e18]
+              - generic [ref=e20]: Stories
+            - link "Artworks" [ref=e21]:
+              - /url: /artworks
+              - img [ref=e22]
+              - generic [ref=e26]: Artworks
+            - link "Notifications" [ref=e27]:
+              - /url: /notifications
+              - img [ref=e28]
+              - generic [ref=e31]: Notifications
+            - link "Create Story" [ref=e32]:
+              - /url: /create-story
+              - img [ref=e33]
+              - generic [ref=e36]: Create Story
+            - link "Create Artwork" [ref=e37]:
+              - /url: /create-artwork
+              - img [ref=e38]
+              - generic [ref=e41]: Create Artwork
+            - link "Saved" [ref=e42]:
+              - /url: /saved
+              - img [ref=e43]
+              - generic [ref=e45]: Saved
+            - link "My Profile" [ref=e46]:
+              - /url: /profile
+              - img [ref=e47]
+              - generic [ref=e51]: My Profile
+          - generic [ref=e53]:
+            - generic [ref=e54]: F
+            - generic [ref=e55]:
+              - paragraph [ref=e56]: flowcheck0601c
+              - paragraph [ref=e57]: "@flowcheck0601c"
+        - button "Logout" [ref=e59]
+    - generic [ref=e60]:
+      - banner [ref=e61]:
+        - generic [ref=e62]:
+          - paragraph [ref=e63]: The Index
+          - heading "My Profile" [level=1] [ref=e64]
+        - link "Search creators, original stories, and art..." [ref=e66]:
+          - /url: /search
+          - img [ref=e67]
+          - generic [ref=e70]: Search creators, original stories, and art...
+        - generic [ref=e71]:
+          - link [ref=e72]:
+            - /url: /notifications
+            - img [ref=e73]
+          - button "Toggle theme" [ref=e76]:
+            - img [ref=e77]
+            - generic [ref=e79]: Toggle theme
+          - link "F flowcheck0601c @flowcheck0601c" [ref=e80]:
+            - /url: /profile
+            - generic [ref=e81]: F
+            - generic [ref=e82]:
+              - paragraph [ref=e83]: flowcheck0601c
+              - paragraph [ref=e84]: "@flowcheck0601c"
+      - main [ref=e85]:
+        - generic [ref=e86]:
+          - generic [ref=e89]:
+            - generic [ref=e90]:
+              - generic [ref=e91]: F
+              - img [ref=e93]
+            - generic [ref=e96]:
+              - generic [ref=e97]:
+                - paragraph [ref=e98]: Profile detail
+                - heading "flowcheck0601c" [level=1] [ref=e99]
+                - paragraph [ref=e100]: flowcheck0601@example.com
+              - generic [ref=e101]:
+                - button "0 followers" [ref=e102]
+                - button "0 following" [ref=e103]
+                - generic [ref=e104]: 1 posts
+          - generic [ref=e105]:
+            - generic [ref=e106]:
+              - heading "Edit Profile" [level=2] [ref=e107]
+              - button "Save Profile" [ref=e108]
+            - generic [ref=e109]:
+              - generic [ref=e110]:
+                - generic [ref=e111]: Username
+                - textbox [ref=e112]: flowcheck0601c
+              - generic [ref=e113]:
+                - generic [ref=e114]: Email
+                - textbox [ref=e115]: flowcheck0601@example.com
+              - generic [ref=e116]:
+                - generic [ref=e117]: Bio
+                - textbox "Tell people about yourself..." [ref=e118]
+          - generic [ref=e119]:
+            - generic [ref=e121]:
+              - paragraph [ref=e122]: Creator network
+              - heading "Following creators" [level=2] [ref=e123]
+            - paragraph [ref=e124]: This profile is not following any creators yet.
+          - generic [ref=e125]:
+            - heading "Reading History" [level=2] [ref=e126]
+            - link "story 7 minutes ago Ngay kiem tra Kiem tra duoc 8,5d" [ref=e128]:
+              - /url: /story/69d3246adaa808edbf6c788b
+              - generic [ref=e129]:
+                - generic [ref=e130]: story
+                - generic [ref=e131]: 7 minutes ago
+              - heading "Ngay kiem tra" [level=3] [ref=e132]
+              - paragraph [ref=e133]: Kiem tra duoc 8,5d
+          - generic [ref=e134]:
+            - generic [ref=e136]:
+              - paragraph [ref=e137]: Published archive
+              - heading "Content (1)" [level=2] [ref=e138]
+            - article [ref=e140]:
+              - generic [ref=e141]:
+                - generic [ref=e142]:
+                  - generic [ref=e143]: story
+                  - generic [ref=e144]: approved
+                - generic [ref=e145]: 0 views
+              - generic [ref=e146]:
+                - heading "Right rail setup story" [level=3] [ref=e147]
+                - paragraph [ref=e148]: setup creator presence
+                - generic [ref=e150]: "#railtest"
+                - generic [ref=e151]:
+                  - button "0" [ref=e152]:
+                    - img [ref=e153]
+                    - text: "0"
+                  - button "0" [ref=e155]:
+                    - img [ref=e156]
+                    - text: "0"
+                - generic [ref=e158]:
+                  - link "Read story →" [ref=e159]:
+                    - /url: /story/69d3492b5fd4e111c2bc7554
+                  - link "Edit" [ref=e160]:
+                    - /url: /story/69d3492b5fd4e111c2bc7554/edit
+    - complementary [ref=e161]:
+      - generic [ref=e162]:
+        - generic [ref=e163]:
+          - heading "Trending Tags" [level=2] [ref=e164]
+          - link "View all" [ref=e165]:
+            - /url: /search?view=tags
+        - generic [ref=e166]:
+          - link "#newday" [ref=e167]:
+            - /url: /home?tag=newday
+          - link "#railtest" [ref=e168]:
+            - /url: /home?tag=railtest
+          - link "#badday" [ref=e169]:
+            - /url: /home?tag=badday
+          - link "#tan" [ref=e170]:
+            - /url: /home?tag=tan
+          - link "#the" [ref=e171]:
+            - /url: /home?tag=the
+          - link "#newgay" [ref=e172]:
+            - /url: /home?tag=newgay
+      - generic [ref=e173]:
+        - heading "Popular Creators" [level=2] [ref=e174]
+        - generic [ref=e175]:
+          - link "Duckk Duckk @Duckk" [ref=e176]:
+            - /url: /profile/69cb3b9ace2544a3075038ca
+            - img "Duckk" [ref=e177]
+            - generic [ref=e178]:
+              - paragraph [ref=e179]: Duckk
+              - paragraph [ref=e180]: "@Duckk"
+          - link "L Loc @Loc" [ref=e181]:
+            - /url: /profile/69cb7399b6a8ad177acac812
+            - generic [ref=e182]: L
+            - generic [ref=e183]:
+              - paragraph [ref=e184]: Loc
+              - paragraph [ref=e185]: "@Loc"
+          - link "M ManhGay @ManhGay" [ref=e186]:
+            - /url: /profile/69cd1702be1808ec9561b4dd
+            - generic [ref=e187]: M
+            - generic [ref=e188]:
+              - paragraph [ref=e189]: ManhGay
+              - paragraph [ref=e190]: "@ManhGay"
+          - link "F flowcheck0601c @flowcheck0601c" [ref=e191]:
+            - /url: /profile/69d347f85fd4e111c2bc74c3
+            - generic [ref=e192]: F
+            - generic [ref=e193]:
+              - paragraph [ref=e194]: flowcheck0601c
+              - paragraph [ref=e195]: "@flowcheck0601c"

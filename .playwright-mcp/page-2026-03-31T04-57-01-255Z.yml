@@ -1,0 +1,132 @@
+- generic [ref=e2]:
+  - generic:
+    - img
+  - generic [ref=e4]:
+    - complementary [ref=e5]:
+      - generic [ref=e6]:
+        - generic [ref=e7]:
+          - paragraph [ref=e8]: The Index
+          - paragraph [ref=e9]: Share Your Stories. Showcase Your Art.
+        - navigation [ref=e10]:
+          - link "Home" [ref=e11]:
+            - /url: /home
+            - img [ref=e12]
+            - generic [ref=e15]: Home
+          - link "Stories" [ref=e16]:
+            - /url: /stories
+            - img [ref=e17]
+            - generic [ref=e19]: Stories
+          - link "Artworks" [ref=e20]:
+            - /url: /artworks
+            - img [ref=e21]
+            - generic [ref=e25]: Artworks
+          - link "Notifications" [ref=e26]:
+            - /url: /notifications
+            - img [ref=e27]
+            - generic [ref=e30]: Notifications
+          - link "Create Story" [ref=e31]:
+            - /url: /create-story
+            - img [ref=e32]
+            - generic [ref=e35]: Create Story
+          - link "Create Artwork" [ref=e36]:
+            - /url: /create-artwork
+            - img [ref=e37]
+            - generic [ref=e40]: Create Artwork
+          - link "My Profile" [ref=e41]:
+            - /url: /profile
+            - img [ref=e42]
+            - generic [ref=e46]: My Profile
+      - generic [ref=e47]:
+        - generic [ref=e49]:
+          - generic [ref=e50]: F
+          - generic [ref=e51]:
+            - paragraph [ref=e52]: flow_user_1774930959628
+            - paragraph [ref=e53]: "@flow_user_1774930959628"
+        - button "Logout" [ref=e54]
+    - generic [ref=e55]:
+      - banner [ref=e56]:
+        - generic [ref=e57]:
+          - paragraph [ref=e58]: The Index
+          - heading "Notifications" [level=1] [ref=e59]
+        - link "Search creators, original stories, and art..." [ref=e61]:
+          - /url: /search
+          - img [ref=e62]
+          - generic [ref=e65]: Search creators, original stories, and art...
+        - generic [ref=e66]:
+          - link "1" [ref=e94]:
+            - /url: /notifications
+            - img [ref=e68]
+            - generic [ref=e95]: "1"
+          - button "Toggle theme" [ref=e71]:
+            - img [ref=e72]
+            - generic [ref=e74]: Toggle theme
+          - link "F flow_user_1774930959628 @flow_user_1774930959628" [ref=e75]:
+            - /url: /profile
+            - generic [ref=e76]: F
+            - generic [ref=e77]:
+              - paragraph [ref=e78]: flow_user_1774930959628
+              - paragraph [ref=e79]: "@flow_user_1774930959628"
+      - main [ref=e80]:
+        - generic [ref=e81]:
+          - generic [ref=e97]:
+            - generic [ref=e98]:
+              - paragraph [ref=e99]: Realtime inbox
+              - heading "Notifications" [level=2] [ref=e100]
+              - paragraph [ref=e101]: Follow, comment, approval and moderation updates appear here in realtime.
+            - generic [ref=e102]: 1 unread
+          - generic [ref=e103]:
+            - article [ref=e104]:
+              - generic [ref=e105]:
+                - generic [ref=e106]:
+                  - generic [ref=e107]: F
+                  - generic [ref=e108]:
+                    - paragraph [ref=e109]: Your story "Realtime Reject 1774930959628" has been removed due to policy violations
+                    - paragraph [ref=e110]: "@flow_admin_1774930959628 • a few seconds ago"
+                - button "Mark as read" [ref=e111]
+            - article [ref=e112]:
+              - generic [ref=e113]:
+                - generic [ref=e114]:
+                  - generic [ref=e115]: F
+                  - generic [ref=e116]:
+                    - paragraph [ref=e117]: Your story "Realtime Story 1774930959628" has been reviewed and approved!
+                    - paragraph [ref=e118]: "@flow_admin_1774930959628 • a minute ago"
+                    - button "Open post →" [ref=e119]
+                - generic [ref=e120]: Read
+            - article [ref=e121]:
+              - generic [ref=e122]:
+                - generic [ref=e123]:
+                  - generic [ref=e124]: F
+                  - generic [ref=e125]:
+                    - paragraph [ref=e126]: Your artwork "Realtime Artwork 1774930959628" has been reviewed and approved!
+                    - paragraph [ref=e127]: "@flow_admin_1774930959628 • 31 minutes ago"
+                    - button "Open post →" [ref=e128]
+                - generic [ref=e129]: Read
+    - complementary [ref=e85]:
+      - generic [ref=e86]:
+        - heading "Trending Tags" [level=2] [ref=e87]
+        - generic [ref=e88]:
+          - link "#realtime · 2" [ref=e130]:
+            - /url: /home?tag=realtime
+          - link "#@manggayboylove · 1" [ref=e131]:
+            - /url: /home?tag=%40manggayboylove
+          - link "#story · 1" [ref=e132]:
+            - /url: /home?tag=story
+          - link "#manh gay lo voi anh ai · 1" [ref=e133]:
+            - /url: /home?tag=manh%20gay%20lo%20voi%20anh%20ai
+          - link "#art · 1" [ref=e134]:
+            - /url: /home?tag=art
+      - generic [ref=e90]:
+        - heading "Popular Creators" [level=2] [ref=e91]
+        - generic [ref=e92]:
+          - link "Duckk Duckk @Duckk" [ref=e135]:
+            - /url: /profile/69cb3b9ace2544a3075038ca
+            - img "Duckk" [ref=e136]
+            - generic [ref=e137]:
+              - paragraph [ref=e138]: Duckk
+              - paragraph [ref=e139]: "@Duckk"
+          - link "F flow_user_1774930959628 @flow_user_1774930959628" [ref=e140]:
+            - /url: /profile/69cb4c0fbe0621c9b838cb94
+            - generic [ref=e141]: F
+            - generic [ref=e142]:
+              - paragraph [ref=e143]: flow_user_1774930959628
+              - paragraph [ref=e144]: "@flow_user_1774930959628"
