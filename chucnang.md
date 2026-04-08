@@ -73,3 +73,16 @@ o	getLikedContent: Lấy content đã like; sắp xếp mới nhất
 -	Real-time WebSocket notifications
 -	Cấm tạm 7 ngày + cấm vĩnh viễn
 -	Reading history (top 100)
+-	AI-Powered Content Recommendations (ContentController): Mở rộng getRecommendedTags và getHomeFeed với thuật toán machine learning phân tích reading history (từ getReadingHistory) và favorite tags (từ getFavoriteTags), gợi ý nội dung cá nhân hóa với độ chính xác cao
+-	Advanced Semantic Search (ContentController): Nâng cấp searchContent với tìm kiếm hiểu ngữ cảnh (semantic matching), hỗ trợ tìm kiếm bằng hình ảnh (image-to-text) và bộ lọc nâng cao theo tác giả, thời gian, độ phổ biến
+-	Gamification System (UserController): Thêm hệ thống điểm thưởng, huy hiệu (badges) trong getProfile và updateProfile, dựa trên hoạt động như tạo nội dung (createStory/createArtwork), tương tác (toggleLike/toggleBookmark), và đóng góp cộng đồng
+-	Collaborative Writing Features (ContentController): Mở rộng updateContent cho phép nhiều người dùng hợp tác viết/chỉnh sửa story với version control, bình luận thời gian thực (từ CommentController), và quyền truy cập phân cấp
+-	User Analytics Dashboard (UserController): Nâng cấp getProfile với thống kê cá nhân như số lượng nội dung đã tạo, lượt xem, tương tác, và xu hướng đọc; cho admin mở rộng getUsersForModeration với báo cáo tổng quan
+-	Automated AI Content Moderation (ModerationController): Tích hợp AI vào banContent và getReports để tự động phát hiện và gắn cờ nội dung vi phạm (spam, toxic language) dựa trên comments (từ getComments) và reports (từ createReport)
+-	Offline Reading Mode (ContentController): Mở rộng getContent để hỗ trợ tải nội dung (stories/artworks) về thiết bị, đồng bộ hóa tiến độ đọc và bookmark khi có kết nối
+-	Social Sharing Integration (ContentController): Thêm chức năng chia sẻ nội dung từ getContent lên mạng xã hội với preview tùy chỉnh, theo dõi số lượt chia sẻ từ bên ngoài
+-	Personalized UI Themes and Customization (UserController): Mở rộng updateProfile để lưu trữ sở thích giao diện (theme, font), tích hợp với frontend để tùy chỉnh cá nhân
+-	Premium Content Features (ContentController & AuthController): Thêm hệ thống nội dung trả phí trong createStory/createArtwork, với thanh toán tích hợp và kiểm tra quyền truy cập trong getContent
+-	Social Login and Two-Factor Authentication (AuthController): Mở rộng register/login với đăng nhập qua Google/Facebook, và 2FA để tăng bảo mật
+-	Threaded Comments with Mentions (CommentController): Nâng cấp createComment và getComments với hệ thống bình luận lồng nhau, hỗ trợ mention (@username) và thông báo real-time (từ NotificationController)
+-	Advanced Moderation Tools (ModerationController): Mở rộng getReports và openReportIncident với dashboard quản lý incidents, bulk actions, và analytics về moderation activities
