@@ -44,7 +44,19 @@ export function FeedTabs({ activeTab }) {
   const handleTabClick = (event, tab) => {
     const isModifiedClick = event.metaKey || event.altKey || event.ctrlKey || event.shiftKey;
 
-    if (isModifiedClick || event.button !== 0 || tab.key === activeTab) {
+    if (isModifiedClick || event.button !== 0) {
+      return;
+    }
+
+    if (tab.key === activeTab) {
+      event.preventDefault();
+      navigate(tab.to, {
+        replace: true,
+        state: {
+          feedTab: tab.key,
+          feedRefreshKey: Date.now()
+        }
+      });
       return;
     }
 

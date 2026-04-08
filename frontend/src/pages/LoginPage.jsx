@@ -9,6 +9,24 @@ function formatDateTime(value) {
   return new Date(value).toLocaleString();
 }
 
+function formatRemainingTime(milliseconds) {
+  if (!Number.isFinite(milliseconds) || milliseconds <= 0) {
+    return 'Appeal window expired';
+  }
+
+  const totalMinutes = Math.ceil(milliseconds / (60 * 1000));
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+  const parts = [];
+
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0 && parts.length < 2) parts.push(`${minutes}m`);
+
+  return parts.join(' ') || 'Less than 1 minute';
+}
+
 export default function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -99,6 +117,7 @@ export default function LoginPage() {
 
   const latestAppeal = banDialog?.latestAppeal;
   const hasPendingAppeal = latestAppeal?.status === 'pending';
+  const canSubmitAppeal = Boolean(banDialog?.canSubmitAppeal) && !hasPendingAppeal;
 
   return (
     <div className="auth-screen">
@@ -181,8 +200,6 @@ export default function LoginPage() {
 
           <p className="auth-footer">
             Need an account? <Link to="/register">Create one now</Link>
-            <br />
-            <Link to="/request-password-reset">Forgot password?</Link>
           </p>
         </section>
       </div>
@@ -199,6 +216,12 @@ export default function LoginPage() {
                 </p>
                 <p className="mt-2 text-sm text-slate-400 light:text-slate-500">
                   Banned at: {formatDateTime(banDialog.permanentlyBannedAt)}
+                </p>
+                <p className="mt-2 text-sm text-amber-300 light:text-amber-600">
+                  Account and related data will be permanently deleted on {formatDateTime(banDialog.permanentDeletionScheduledFor)}.
+                </p>
+                <p className="mt-2 text-sm text-slate-300 light:text-slate-700">
+                  Time remaining to appeal: {formatRemainingTime(banDialog.permanentDeletionMillisecondsRemaining)}
                 </p>
               </div>
             </div>
@@ -224,11 +247,11 @@ export default function LoginPage() {
               </button>
               <button
                 type="button"
-                disabled={hasPendingAppeal}
+                disabled={!canSubmitAppeal}
                 onClick={openAppealDialog}
                 className="rounded-2xl bg-brand px-5 py-2 text-sm font-medium text-white transition hover:bg-brand-light disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {hasPendingAppeal ? 'Appeal Pending' : 'Appeal to Admin'}
+                {hasPendingAppeal ? 'Appeal Pending' : canSubmitAppeal ? 'Appeal to Admin' : 'Appeal Window Closed'}
               </button>
             </div>
           </div>

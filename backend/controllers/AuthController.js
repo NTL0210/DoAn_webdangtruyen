@@ -7,7 +7,7 @@ import { createOtpForUser, verifyOtpForUser } from '../services/otpService.js';
 import Phone from '../models/Phone.js';
 import AccountAppeal from '../models/AccountAppeal.js';
 import webSocketManager from '../websocket/WebSocketManager.js';
-import { clearExpiredPostingRestriction, serializePostingRestriction } from '../utils/moderation.js';
+import { clearExpiredPostingRestriction, getPermanentBanDeletionDeadline, serializePermanentBan, serializePostingRestriction } from '../utils/moderation.js';
 import { pruneUserSavedContentReferences } from '../utils/savedContent.js';
 
 function signAppealToken(userId) {
@@ -334,6 +334,9 @@ export async function login(req, res) {
         .sort({ updatedAt: -1, createdAt: -1 })
         .select('status appealReason evidence reviewReason reviewedAt createdAt');
 
+      const permanentBanState = serializePermanentBan(user);
+      const canSubmitAppeal = !latestAppeal || latestAppeal.status !== 'pending';
+
       return res.status(403).json({
         success: false,
         error: {
@@ -346,6 +349,11 @@ export async function login(req, res) {
           email: user.email,
           permanentBanReason: user.permanentBanReason,
           permanentlyBannedAt: user.permanentlyBannedAt,
+          permanentDeletionScheduledFor: permanentBanState.permanentDeletionScheduledFor,
+          permanentDeletionMillisecondsRemaining: permanentBanState.permanentDeletionMillisecondsRemaining,
+          permanentDeletionDaysRemaining: permanentBanState.permanentDeletionDaysRemaining,
+          isPermanentDeletionOverdue: permanentBanState.isPermanentDeletionOverdue,
+          canSubmitAppeal: canSubmitAppeal && !permanentBanState.isPermanentDeletionOverdue,
           appealToken: signAppealToken(user._id),
           latestAppeal
         }
@@ -450,6 +458,20 @@ export async function submitAccountAppeal(req, res) {
         error: {
           code: 'VALIDATION_ERROR',
           message: 'This account is not currently permanently banned'
+        }
+      });
+    }
+
+    const deletionDeadline = getPermanentBanDeletionDeadline(user);
+    if (deletionDeadline && deletionDeadline <= new Date()) {
+      return res.status(410).json({
+        success: false,
+        error: {
+          code: 'APPEAL_WINDOW_EXPIRED',
+          message: 'The 5-day appeal window has expired for this account.'
+        },
+        data: {
+          permanentDeletionScheduledFor: deletionDeadline
         }
       });
     }

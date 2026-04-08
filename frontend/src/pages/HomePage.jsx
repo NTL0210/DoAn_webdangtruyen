@@ -1,13 +1,15 @@
 import { Search, Star } from 'lucide-react';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { FeedComposer, FeedTabs } from '../components/FeedScaffold';
 import { EmptyState } from '../components/common/EmptyState';
+import { VirtualizedFeedList } from '../components/feed/VirtualizedFeedList';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { ContentCard } from '../components/ContentCard';
 import { SAVED_COLLECTION_ENDPOINTS } from '../constants/app';
 import { useCursorFeed } from '../hooks/useCursorFeed';
 import { consumePostLoginNotice, getCurrentUser, getToken, subscribeToCurrentUserChange } from '../services/authService';
+import { FRONTEND_CACHE_NAMESPACES, invalidateFrontendCache } from '../services/frontendCache';
 import { fetchFavoriteTags, toggleFavoriteTag } from '../services/tagPreferenceService';
 import { normalizeTag, normalizeTagList } from '../utils/hashtags';
 
@@ -15,6 +17,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const HOME_FEED_PAGE_SIZE = 10;
 
 export default function HomePage() {
+  const location = useLocation();
   const [savedCollections, setSavedCollections] = useState({
     bookmarked: [],
     liked: []
@@ -57,7 +60,8 @@ export default function HomePage() {
     error,
     hasMore: hasMoreFeed,
     isLoadingMore,
-    loadMoreRef
+    loadMoreRef,
+    reload: reloadFeed
   } = useCursorFeed({
     enabled: !isSavedView,
     params: feedParams,
@@ -175,6 +179,28 @@ export default function HomePage() {
   );
   const favoriteTags = useMemo(() => normalizeTagList(currentUser?.favoriteTags || []), [currentUser?.favoriteTags]);
   const isSelectedTagFavorite = Boolean(selectedTag) && favoriteTags.includes(selectedTag);
+
+  useEffect(() => {
+    if (location.state?.feedTab !== 'home' || !location.state?.feedRefreshKey) {
+      return;
+    }
+
+    invalidateFrontendCache([FRONTEND_CACHE_NAMESPACES.HOME_FEED]);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    const shouldResetFeed = typeFilter !== 'all' || sortBy !== 'newest' || search.trim() !== '';
+
+    if (shouldResetFeed) {
+      setTypeFilter('all');
+      setSortBy('newest');
+      setSearch('');
+      return;
+    }
+
+    if (!selectedTag && !isSavedView) {
+      reloadFeed();
+    }
+  }, [location.state?.feedRefreshKey]);
 
   const clearTagFilter = () => {
     if (searchParams.has('tag')) {
@@ -332,19 +358,15 @@ export default function HomePage() {
             <LoadingSpinner label={isSavedView ? `Loading ${typeFilter} posts...` : 'Loading feed...'} />
           </div>
         ) : visibleContent.length ? (
-          <div className="feed-stream">
-            {visibleContent.map((item) => (
-              <ContentCard key={item._id} item={item} />
-            ))}
-            {!isSavedView && isLoadingMore ? (
-              <div className="border-t border-slate-800 px-4 py-4 text-sm text-slate-500 sm:px-5">
-                Loading more posts...
-              </div>
-            ) : null}
-            {!isSavedView && hasMoreFeed ? (
-              <div ref={loadMoreRef} className="h-4 w-full" aria-hidden="true" />
-            ) : null}
-          </div>
+          <VirtualizedFeedList
+            items={visibleContent}
+            renderItem={(item) => <ContentCard key={item._id} item={item} />}
+            estimateSize={540}
+            hasMore={!isSavedView && hasMoreFeed}
+            isLoadingMore={!isSavedView && isLoadingMore}
+            loadMoreRef={!isSavedView ? loadMoreRef : undefined}
+            loadingMoreLabel="Loading more posts..."
+          />
         ) : typeFilter === 'bookmarked' ? (
           <div className="feed-empty">
             <EmptyState

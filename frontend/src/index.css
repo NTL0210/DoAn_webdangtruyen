@@ -830,6 +830,22 @@
     @apply divide-y divide-slate-800;
   }
 
+  .feed-virtual-shell {
+    @apply w-full;
+  }
+
+  .feed-virtual-row {
+    @apply w-full border-b border-slate-800;
+  }
+
+  .feed-virtual-row-sentinel {
+    @apply border-b-0;
+  }
+
+  .feed-virtual-sentinel {
+    @apply flex min-h-[4.5rem] items-center justify-center px-4 py-4 text-sm text-slate-500 sm:px-5;
+  }
+
   .feed-card {
     @apply px-4 py-4 transition sm:px-5;
   }

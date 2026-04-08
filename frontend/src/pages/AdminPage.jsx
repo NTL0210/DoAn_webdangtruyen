@@ -29,6 +29,41 @@ function formatDateTime(value) {
   return new Date(value).toLocaleString();
 }
 
+function formatRemainingTime(milliseconds) {
+  if (!Number.isFinite(milliseconds) || milliseconds <= 0) {
+    return 'Ready for deletion cleanup';
+  }
+
+  const totalMinutes = Math.ceil(milliseconds / (60 * 1000));
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+  const parts = [];
+
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0 && parts.length < 2) parts.push(`${minutes}m`);
+
+  return parts.join(' ') || 'Less than 1 minute';
+}
+
+function getAuditActionLabel(actionType) {
+  switch (actionType) {
+    case 'permanent-ban':
+      return 'Permanent ban scheduled';
+    case 'appeal-approved':
+      return 'Appeal approved';
+    case 'appeal-rejected':
+      return 'Appeal rejected';
+    case 'account-restored':
+      return 'Account restored';
+    case 'account-purged':
+      return 'Account purged';
+    default:
+      return actionType;
+  }
+}
+
 function isUserRestricted(user) {
   return Boolean(user?.postingRestrictedUntil) && new Date(user.postingRestrictedUntil) > new Date();
 }
@@ -125,9 +160,11 @@ export default function AdminPage() {
   const [reports, setReports] = useState([]);
   const [users, setUsers] = useState([]);
   const [appeals, setAppeals] = useState([]);
+  const [history, setHistory] = useState([]);
   const [loadingReports, setLoadingReports] = useState(true);
   const [loadingUsers, setLoadingUsers] = useState(true);
   const [loadingAppeals, setLoadingAppeals] = useState(true);
+  const [loadingHistory, setLoadingHistory] = useState(true);
   const [error, setError] = useState('');
   const [processingId, setProcessingId] = useState('');
   const [expandedAppealId, setExpandedAppealId] = useState('');
@@ -143,6 +180,7 @@ export default function AdminPage() {
     fetchReports();
     fetchUsers();
     fetchAppeals();
+    fetchHistory();
   }, []);
 
   const fetchReports = async () => {
@@ -214,6 +252,30 @@ export default function AdminPage() {
       setError('Failed to load appeals');
     } finally {
       setLoadingAppeals(false);
+    }
+  };
+
+  const fetchHistory = async () => {
+    try {
+      setLoadingHistory(true);
+      const response = await fetch(`${API_URL}/api/admin/history`, {
+        headers: {
+          Authorization: `Bearer ${getToken()}`
+        }
+      });
+      const data = await response.json();
+
+      if (!data.success) {
+        setError(data.error?.message || 'Failed to load moderation history');
+        return;
+      }
+
+      setHistory(data.data || []);
+      setError('');
+    } catch {
+      setError('Failed to load moderation history');
+    } finally {
+      setLoadingHistory(false);
     }
   };
 
@@ -450,7 +512,7 @@ export default function AdminPage() {
         return;
       }
 
-      await Promise.all([fetchUsers(), fetchAppeals()]);
+      await Promise.all([fetchUsers(), fetchAppeals(), fetchHistory()]);
       setError('');
     } catch {
       setError('Failed to clear the user restriction');
@@ -479,7 +541,7 @@ export default function AdminPage() {
         return;
       }
 
-      await Promise.all([fetchUsers(), fetchAppeals()]);
+      await Promise.all([fetchUsers(), fetchAppeals(), fetchHistory()]);
       setError('');
     } catch {
       setError('Failed to approve appeal');
@@ -596,7 +658,7 @@ export default function AdminPage() {
           return;
         }
 
-        await Promise.all([fetchUsers(), fetchAppeals()]);
+        await Promise.all([fetchUsers(), fetchAppeals(), fetchHistory()]);
       }
 
       if (action === 'appeal-reject') {
@@ -620,7 +682,7 @@ export default function AdminPage() {
           return;
         }
 
-        await fetchAppeals();
+        await Promise.all([fetchAppeals(), fetchHistory()]);
       }
 
       setError('');
@@ -638,6 +700,7 @@ export default function AdminPage() {
 
   const pendingAppeals = appeals.filter((item) => item.status === 'pending').length;
   const restrictedUsers = users.filter((user) => isUserRestricted(user) || isUserPermanentlyBanned(user)).length;
+  const scheduledForDeletionUsers = users.filter((user) => user.isPendingPermanentDeletion).length;
   const totalReportSignals = reports.reduce((total, item) => total + item.reportCount, 0);
   const criticalIncidents = reports.filter((item) => getReportSeverity(item.reportCount) === 'critical').length;
   const highVolumeIncidents = reports.filter((item) => ['high', 'critical'].includes(getReportSeverity(item.reportCount))).length;
@@ -707,6 +770,8 @@ export default function AdminPage() {
                   <>
                     <p className="mt-2 text-sm font-medium text-white">Permanent ban since {formatDateTime(user.permanentlyBannedAt)}</p>
                     <p className="mt-2 text-sm text-slate-300">Reason: {user.permanentBanReason}</p>
+                    <p className="mt-2 text-sm text-amber-300">Scheduled purge: {formatDateTime(user.permanentDeletionScheduledFor)}</p>
+                    <p className="mt-2 text-sm text-slate-400">Time remaining: {formatRemainingTime(user.permanentDeletionMillisecondsRemaining)}</p>
                   </>
                 ) : restricted ? (
                   <>
@@ -817,6 +882,8 @@ export default function AdminPage() {
               <span className="rounded-full border border-slate-700 bg-slate-950/50 px-3 py-1.5">{REPORT_DETAILS_LIMIT} log items per detail page</span>
               <span className="rounded-full border border-slate-700 bg-slate-950/50 px-3 py-1.5">{restrictedUsers} restricted accounts</span>
               <span className="rounded-full border border-slate-700 bg-slate-950/50 px-3 py-1.5">{pendingAppeals} appeals waiting</span>
+              <span className="rounded-full border border-slate-700 bg-slate-950/50 px-3 py-1.5">{scheduledForDeletionUsers} accounts pending purge</span>
+              <span className="rounded-full border border-slate-700 bg-slate-950/50 px-3 py-1.5">History retained 90 days</span>
             </div>
           </div>
 
@@ -829,6 +896,9 @@ export default function AdminPage() {
             </button>
             <button type="button" onClick={() => setActiveTab('appeals')} className={getTabButtonClass(activeTab, 'appeals')}>
               Appeals
+            </button>
+            <button type="button" onClick={() => setActiveTab('history')} className={getTabButtonClass(activeTab, 'history')}>
+              History
             </button>
           </div>
         </div>
@@ -861,6 +931,13 @@ export default function AdminPage() {
             hint="Appeals waiting for an explicit review note"
             active={activeTab === 'appeals'}
             onClick={() => setActiveTab('appeals')}
+          />
+          <AdminStatCard
+            label="Audit history"
+            value={loadingHistory ? '...' : history.length}
+            hint="Ban, appeal, restore, and purge events kept for 90 days"
+            active={activeTab === 'history'}
+            onClick={() => setActiveTab('history')}
           />
         </div>
       </section>
@@ -1043,6 +1120,12 @@ export default function AdminPage() {
                         <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Ban Context</p>
                         <p className="mt-2 text-sm text-slate-300">Reason: {appeal.banReason}</p>
                         <p className="mt-2 text-sm text-slate-400">Banned at: {formatDateTime(appeal.bannedAt || user?.permanentlyBannedAt)}</p>
+                        {user?.permanentDeletionScheduledFor ? (
+                          <>
+                            <p className="mt-2 text-sm text-amber-300">Scheduled purge: {formatDateTime(user.permanentDeletionScheduledFor)}</p>
+                            <p className="mt-2 text-sm text-slate-400">Time remaining: {formatRemainingTime(user.permanentDeletionMillisecondsRemaining)}</p>
+                          </>
+                        ) : null}
                       </div>
 
                       <div className="detail-subcard">
@@ -1109,12 +1192,65 @@ export default function AdminPage() {
           })}
         </div>
       ) : (
+        activeTab === 'history' ? (
+          loadingHistory && !history.length ? (
+            <SectionLoader message="Loading moderation history..." />
+          ) : history.length ? (
+            <div className="space-y-4">
+              {history.map((item) => (
+                <article key={item._id} className="detail-card p-6">
+                  <div className="flex flex-col gap-4 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="space-y-3">
+                      <div className="flex flex-wrap items-center gap-2">
+                        <StatusPill tone={item.actionType === 'appeal-approved' || item.actionType === 'account-restored' ? 'success' : item.actionType === 'appeal-rejected' || item.actionType === 'account-purged' ? 'danger' : 'warning'}>
+                          {getAuditActionLabel(item.actionType)}
+                        </StatusPill>
+                        <span className="text-xs uppercase tracking-[0.2em] text-slate-500">{formatRelative(item.createdAt)}</span>
+                      </div>
+
+                      <div>
+                        <h3 className="text-xl font-semibold text-white">@{item.targetUsernameSnapshot || 'Unknown user'}</h3>
+                        <p className="mt-2 text-sm text-slate-400">Actor: @{item.actorUsernameSnapshot || 'system'}</p>
+                        <p className="mt-2 text-sm text-slate-400">Target status snapshot: {item.targetUserStatus || 'N/A'}</p>
+                      </div>
+
+                      <div className="detail-subcard">
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Reason</p>
+                        <p className="mt-2 text-sm text-slate-300">{item.reason || 'No explicit note provided.'}</p>
+                      </div>
+
+                      <div className="detail-subcard">
+                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Metadata</p>
+                        <div className="mt-3 space-y-2 text-sm text-slate-300">
+                          {item.metadata?.permanentDeletionScheduledFor ? <p>Scheduled purge: {formatDateTime(item.metadata.permanentDeletionScheduledFor)}</p> : null}
+                          {Number.isFinite(item.metadata?.hiddenStories) ? <p>Hidden stories: {item.metadata.hiddenStories}</p> : null}
+                          {Number.isFinite(item.metadata?.hiddenArtworks) ? <p>Hidden artworks: {item.metadata.hiddenArtworks}</p> : null}
+                          {Number.isFinite(item.metadata?.restoredStories) ? <p>Restored stories: {item.metadata.restoredStories}</p> : null}
+                          {Number.isFinite(item.metadata?.restoredArtworks) ? <p>Restored artworks: {item.metadata.restoredArtworks}</p> : null}
+                          {Number.isFinite(item.metadata?.contentDeletedCount) ? <p>Permanently deleted content items: {item.metadata.contentDeletedCount}</p> : null}
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </article>
+              ))}
+            </div>
+          ) : (
+            <div className="detail-empty-state">
+              <div className="text-lg font-semibold text-white">No moderation history yet</div>
+              <p className="max-w-md text-sm text-slate-400">
+                Permanent bans, appeal reviews, restores, and purge events will appear here and expire automatically after 90 days.
+              </p>
+            </div>
+          )
+        ) : (
         <div className="detail-empty-state">
           <div className="text-lg font-semibold text-white">No appeals submitted</div>
           <p className="max-w-md text-sm text-slate-400">
             Permanent-ban appeals will appear here with the ban reason, appeal text, evidence, and review actions.
           </p>
         </div>
+        )
       )}
 
       {actionModal.action ? (

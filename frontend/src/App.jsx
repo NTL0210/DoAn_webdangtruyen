@@ -11,9 +11,6 @@ import { AppLayout } from './components/layout/AppLayout';
 const SplashScreen = lazy(routeModuleLoaders.splash);
 const LoginPage = lazy(routeModuleLoaders.login);
 const RegisterPage = lazy(routeModuleLoaders.register);
-const VerifyEmailPage = lazy(routeModuleLoaders.verifyEmail);
-const RequestPasswordResetPage = lazy(routeModuleLoaders.requestPasswordReset);
-const ResetPasswordPage = lazy(routeModuleLoaders.resetPassword);
 const HomePage = lazy(routeModuleLoaders.home);
 const StoriesPage = lazy(routeModuleLoaders.stories);
 const ArtworksPage = lazy(routeModuleLoaders.artworks);
@@ -87,9 +84,6 @@ function App() {
           {/* Auth pages */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
-          <Route path="/verify-email" element={<VerifyEmailPage />} />
-          <Route path="/request-password-reset" element={<RequestPasswordResetPage />} />
-          <Route path="/reset-password" element={<ResetPasswordPage />} />
 
           {/* Protected pages with AppLayout */}
           <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
