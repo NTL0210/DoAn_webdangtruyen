@@ -1,227 +1,250 @@
-# WebTruyen Backend API
+# WebTruyen
 
-Backend API for a comic/story social platform built with Node.js, Express, and MongoDB.
+Full-stack social platform for stories and artworks with a React frontend and Node.js/Express backend.
+
+## Overview
+
+This repository contains:
+
+- `backend/` — Node.js + Express API server with MongoDB persistence
+- `frontend/` — React + Vite frontend UI for browsing, creating content, and admin moderation
+
+The app supports user registration, content publishing, bookmarks, comments, follows, notifications, moderation, and role-based user access.
 
 ## Features
 
-- JWT authentication (`register`, `login`, `get me`)
-- Post workflow with moderation states (`draft -> pending -> approved/rejected`)
-- Public post feed with search, tag filter, sort, pagination
-- Comment system on approved posts
-- Bookmark system for approved posts
-- User follow/unfollow + followers/following lists
-- Notification system (follow/comment/system types)
-- Role-based access (`user`, `moderator`, `admin`)
-- Soft-delete for posts and comments
+- JWT authentication and protected routes
+- Story/artwork creation workflow with draft → pending → approved/rejected moderation
+- Public feed with search, tag filtering, sort, and pagination
+- Commenting, bookmarking, and follow/unfollow features
+- User profiles with publishing and social info
+- Admin/moderator dashboard for moderation and user management
+- Notification feed and read/unread management
+- Reading history tracking
 
 ## Tech Stack
 
-- Node.js (>= 18)
-- Express.js
-- MongoDB + Mongoose
-- JWT (`jsonwebtoken`)
-- Security middleware: `helmet`, `cors`, `express-rate-limit`
+- Frontend: React, Vite, React Router, Tailwind CSS
+- Backend: Node.js, Express, MongoDB, Mongoose
+- Authentication: JSON Web Tokens
+- Testing: Vitest
 
-## Project Structure
+## Repository Layout
 
 ```text
-src/
-  config/         # env + database connection
-  controllers/    # business logic
-  middlewares/    # auth/error/notFound/post guards
-  models/         # mongoose schemas
-  routes/         # api endpoints
-  utils/          # helpers/services
-  app.js          # express app setup
-  server.js       # entrypoint
+backend/
+  app.js
+  server.js
+  config/
+  controllers/
+  middleware/
+  models/
+  routes/
+  scripts/
+  tests/
+frontend/
+  src/
+  index.html
+  package.json
 ```
 
-## Setup
+## Getting Started
 
-1. Install dependencies
+### Backend
+
+1. Install backend dependencies
 
 ```bash
+cd backend
 npm install
 ```
 
-2. Create environment file
+2. Create backend environment file
 
 ```bash
-cp .env.example .env
+cd backend
+copy .env.example .env
 ```
 
-If you are on Windows PowerShell:
+3. Update backend `.env`
 
-```powershell
-Copy-Item .env.example .env
-```
-
-3. Update `.env`
+Example values:
 
 ```env
 PORT=5000
 MONGODB_URI=mongodb://localhost:27017/webtruyen
-JWT_SECRET=your_super_secret_jwt_key_change_this_in_production
+JWT_SECRET=your_secret_key
 JWT_EXPIRES_IN=7d
 ```
 
-4. Run server
+4. Create frontend environment file
+
+```bash
+cd ../frontend
+copy .env.example .env
+```
+
+5. Update frontend `.env`
+
+Example values:
+
+```env
+VITE_API_URL=http://localhost:5000
+```
+
+6. Run backend server
+
+```bash
+cd ../backend
+npm run dev
+```
+
+5. Run backend tests
+
+```bash
+npm test
+```
+
+### Frontend
+
+1. Install frontend dependencies
+
+```bash
+cd frontend
+npm install
+```
+
+2. Run frontend development server
 
 ```bash
 npm run dev
 ```
 
-or
+3. Build production frontend
 
 ```bash
-npm start
+npm run build
 ```
 
-Base URL: `http://localhost:5000/api`
+## Running the App
+
+- Backend API default: `http://localhost:5000`
+- Frontend default: `http://localhost:5173`
+
+Make sure the backend is running before using the frontend.
 
 ## API Endpoints
 
 ### Health
 
-- `GET /health`
+- `GET /health` — health check for server, database, and cache status
 
 ### Auth
 
-- `POST /auth/register`
-- `POST /auth/login`
-- `GET /auth/me` (auth)
+- `POST /api/auth/register` — register a new user
+- `POST /api/auth/login` — login and receive JWT token
+- `POST /api/auth/logout` — logout (client-side token discard)
+- `POST /api/auth/account-appeals` — submit an account appeal (permanently banned users)
 
-### Posts
+### Content
 
-- `POST /posts` (auth)
-- `GET /posts` — public post feed, supports search / filter / sort / pagination (see details below)
-- `GET /posts/:id` (public for approved, owner can view own non-approved posts)
-- `PUT /posts/:id` (auth + owner)
-- `POST /posts/:id/submit` (auth + owner)
-- `POST /posts/:id/images` (auth + owner) — upload up to 5 images
-- `POST /posts/:id/report` (auth)
-- `DELETE /posts/:id` (auth + owner, soft-delete)
-
-#### GET /posts — Query Parameters
-
-Only returns posts with `status = "approved"` and `isDeleted = false`.
-
-| Parameter | Type   | Default  | Description |
-|-----------|--------|----------|-------------|
-| `search`  | string | —        | Case-insensitive search across `title`, `summary`, and `content` |
-| `tag`     | string | —        | Filter by a single tag, e.g. `fantasy` |
-| `sort`    | string | `newest` | Sort order — see options below |
-| `page`    | number | `1`      | Page number (must be ≥ 1) |
-| `limit`   | number | `10`     | Posts per page (1–50) |
-
-**Sort options:**
-
-| Value | Description |
-|-------|-------------|
-| `newest` | Most recently created posts first |
-| `popular` | Ranked by `bookmarksCount` → `commentsCount` → `viewsCount` (all descending) |
-| `trending` | Posts published in the **last 7 days**, ranked by the same engagement metrics as `popular` |
-
-**Example requests:**
-
-```
-GET /api/posts
-GET /api/posts?search=romance
-GET /api/posts?tag=fantasy
-GET /api/posts?sort=popular
-GET /api/posts?sort=trending&limit=5
-GET /api/posts?search=art&tag=fantasy&sort=newest&page=2&limit=10
-```
-
-**Response:**
-
-```json
-{
-  "success": true,
-  "pagination": {
-    "page": 1,
-    "limit": 10,
-    "total": 42,
-    "totalPages": 5,
-    "hasNextPage": true,
-    "hasPrevPage": false
-  },
-  "posts": [ ... ]
-}
-```
-
-| Pagination field | Description |
-|-----------------|-------------|
-| `page` | Current page number |
-| `limit` | Number of posts requested per page |
-| `total` | Total number of posts matching the query |
-| `totalPages` | Total number of pages (`Math.ceil(total / limit)`) |
-| `hasNextPage` | `true` if there is a next page |
-| `hasPrevPage` | `true` if there is a previous page |
-
-### Users
-
-- `GET /users/:id` — public profile (username, bio, avatar, follower counts, post count; `isFollowing` included when authenticated)
-- `GET /users/me/posts` (auth)
-- `PATCH /users/me/avatar` (auth) — upload avatar image (multipart/form-data, field: `avatar`, max 2 MB)
-- `PATCH /users/me/profile` (auth) — update `displayName` and/or `bio`
-
-### Moderation (moderator/admin only)
-
-- `GET /admin/posts/pending`
-- `PATCH /admin/posts/:id/approve`
-- `PATCH /admin/posts/:id/reject`
-- `GET /admin/reports`
-- `PATCH /admin/reports/:id/review`
-
-### Tags
-
-- `GET /tags`
+- `POST /api/stories` — create a story (auth + posting access)
+- `POST /api/artworks` — create an artwork (auth + posting access)
+- `GET /api/content/search` — search content
+- `GET /api/content/feed` — cursor paginated home feed
+- `GET /api/content/trending` — trending content list
+- `GET /api/content/creators/popular` — popular creator rankings
+- `GET /api/content/tags/recommended` — recommended hashtags for authenticated users
+- `GET /api/content/tags/trending` — trending hashtag stats
+- `GET /api/content/tags` — hashtag directory / search
+- `GET /api/content/:id` — get content by ID
+- `PUT /api/content/:id` — update content (auth + owner/posting access)
+- `POST /api/content/:id/like` — toggle like on content
+- `POST /api/content/:id/bookmark` — toggle bookmark on content
+- `DELETE /api/content/:id` — soft delete content (auth)
 
 ### Comments
 
-- `POST /posts/:id/comments` (auth)
-- `GET /posts/:id/comments`
-- `DELETE /comments/:id` (auth + comment owner)
+- `POST /api/content/:id/comments` — add comment to content (auth)
+- `GET /api/content/:id/comments` — fetch comments for content
+- `DELETE /api/comments/:id` — delete own comment (auth)
 
-### Bookmarks
+### Reports
 
-- `POST /posts/:id/bookmark` (auth)
-- `DELETE /posts/:id/bookmark` (auth)
-- `GET /users/me/bookmarks` (auth)
+- `POST /api/reports` — create a report for inappropriate content (auth)
 
-### Follow
+### Users
 
-- `POST /users/:id/follow` (auth)
-- `DELETE /users/:id/follow` (auth)
-- `GET /users/:id/followers`
-- `GET /users/:id/following`
+- `GET /api/users/search` — search creators
+- `GET /api/users/:id` — get public user profile
+- `PUT /api/users/profile` — update own profile (auth)
+- `PUT /api/users/avatar` — upload/update avatar (auth)
+- `GET /api/users/me/history` — get own reading history (auth)
+- `GET /api/users/me/bookmarks` — get own bookmarked content (auth)
+- `GET /api/users/me/likes` — get own liked content (auth)
+- `GET /api/users/me/favorite-tags` — get own favorite hashtags (auth)
+- `POST /api/users/me/favorite-tags` — add a favorite hashtag (auth)
+- `DELETE /api/users/me/favorite-tags/:tag` — remove a favorite hashtag (auth)
+- `POST /api/users/:id/follow` — follow a user (auth)
+- `DELETE /api/users/:id/follow` — unfollow a user (auth)
+- `GET /api/users/:id/followers` — get a user's followers
+- `GET /api/users/:id/following` — get a user's following list
+- `POST /api/users/:id/subscribe` — subscribe to an artist (auth)
+- `DELETE /api/users/:id/subscribe` — unsubscribe from an artist (auth)
+- `GET /api/users/:id/subscription-info` — get artist subscription info
+- `GET /api/users/me/subscriptions` — get current user's subscriptions (auth)
+- `PUT /api/users/me/subscription-settings` — update subscription settings (auth)
 
 ### Notifications
 
-- `GET /notifications` (auth)
-- `PATCH /notifications/:id/read` (auth)
-- `PATCH /notifications/read-all` (auth)
+- `GET /api/notifications` — get current user's notifications (auth)
+- `PUT /api/notifications/:id/read` — mark notification as read (auth)
+- `DELETE /api/notifications/:id` — delete a notification (auth)
 
-### Reading History
+### Payments
 
-- `POST /history/:postId` (auth) — record or update reading progress for a post
-- `GET /history/me` (auth) — list reading history (most recent first)
-- `DELETE /history/:postId` (auth) — remove a single post from history
+- `POST /api/payments/momo/subscriptions/:artistId/create` — create a MoMo subscription checkout session (auth)
+- `POST /api/payments/momo/premium/create` — create a MoMo premium purchase checkout (auth)
+- `POST /api/payments/momo/ipn` — MoMo IPN callback endpoint
+- `GET /api/payments/momo/return` — MoMo return/redirect endpoint
+- `GET /api/payments/:orderId/status` — get payment status for an order (auth)
+- `POST /api/payments/:orderId/confirm-from-return-dev` — dev helper to confirm payment after return (auth)
 
-## Moderation Workflow
+### Admin / Moderation
 
-- New posts are always created as `draft`
-- Owner submits post: `POST /posts/:id/submit` -> `pending`
-- Moderator/Admin reviews:
-  - `PATCH /admin/posts/:id/approve` -> `approved`
-  - `PATCH /admin/posts/:id/reject` -> `rejected`
+- `PUT /api/admin/content/:id/dismiss-reports` — dismiss reports for content (admin)
+- `PUT /api/admin/content/:id/ban` — ban reported content (admin)
+- `GET /api/admin/reports` — get all reports (admin)
+- `GET /api/admin/reports/:contentType/:id` — get detailed report history for content (admin)
+- `POST /api/admin/reports/:contentType/:id/open` — open a report incident (admin)
+- `PUT /api/admin/reports/:contentType/:id/release` — release an incident (admin)
+- `GET /api/admin/users` — list users for moderation (admin)
+- `PUT /api/admin/users/:id/ban` — suspend a user for 3 days (admin)
+- `PUT /api/admin/users/:id/permanent-ban` — permanently ban a user (admin)
+- `PUT /api/admin/users/:id/unban` — unban a user (admin)
+- `GET /api/admin/appeals` — get account appeals (admin)
+- `PUT /api/admin/appeals/:id/approve` — approve an appeal (admin)
+- `PUT /api/admin/appeals/:id/reject` — reject an appeal (admin)
+
+## Backend Scripts
+
+- `npm run dev` — start server with file watch
+- `npm start` — run production server
+- `npm test` — run Vitest tests
+- `npm run db:update` — sync database schema
+- `npm run db:sync` — sync database schema and normalize data
+- `npm run db:migrate` — sync schema and run backfill scripts
+- `npm run backfill:content-search`
+- `npm run backfill:user-search`
+- `npm run backfill:notification-comments`
+- `npm run backfill:notification-content-status`
+- `npm run redis:check`
 
 ## Notes
 
-- `register` creates users with default role `user`
-- To test moderation endpoints locally, set a user role to `moderator` or `admin` in MongoDB
-- Post and comment delete operations are soft-delete
+- The backend uses role-based access control with `user`, `moderator`, and `admin` roles.
+- Some moderation and admin routes require the authenticated user to have elevated privileges.
+- Upload fields and limits are enforced by middleware in the backend.
 
 ## License
 
