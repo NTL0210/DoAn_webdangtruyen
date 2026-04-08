@@ -5,10 +5,12 @@ import Comment from '../models/Comment.js';
 import Follow from '../models/Follow.js';
 import Notification from '../models/Notification.js';
 import User from '../models/User.js';
+import ArtistSubscription from '../models/ArtistSubscription.js';
 import { buildTagSearchConditions, normalizeTagsForQuery, parseTagsInput } from '../utils/hashtags.js';
 import { escapeRegex, normalizeSearchText, tokenizeSearchText } from '../utils/search.js';
 import { CACHE_NAMESPACES, getOrSetNamespacedCache, invalidateCacheNamespaces } from '../services/cacheStore.js';
 import { removeContentFromAllSavedCollections } from '../utils/savedContent.js';
+import { hasActiveArtistSubscription, canPublishSubscriberOnlyContent } from '../services/subscriptionService.js';
 import webSocketManager from '../websocket/WebSocketManager.js';
 
 const DEFAULT_TAG_TRENDING_LIMIT = 6;
@@ -110,6 +112,47 @@ function normalizePublishStatus(status) {
   return status === 'draft' ? 'draft' : 'approved';
 }
 
+const ACCESS_TYPE_PUBLIC = 'public';
+const ACCESS_TYPE_SUBSCRIBER_ONLY = 'subscriber_only';
+const VALID_ACCESS_TYPES = new Set([ACCESS_TYPE_PUBLIC, ACCESS_TYPE_SUBSCRIBER_ONLY]);
+
+function normalizeAccessType(accessType) {
+  return VALID_ACCESS_TYPES.has(accessType) ? accessType : ACCESS_TYPE_PUBLIC;
+}
+
+function normalizePreviewText(text) {
+  return typeof text === 'string' ? text.trim() : '';
+}
+
+function validateSubscriberOnlyAccess(user, accessType, contentKind, previewText) {
+  if (accessType !== ACCESS_TYPE_SUBSCRIBER_ONLY) {
+    return null;
+  }
+
+  if (!canPublishSubscriberOnlyContent(user)) {
+    return {
+      status: 403,
+      error: {
+        code: 'SUBSCRIBER_CONTENT_RESTRICTED',
+        message: 'Only active premium artists with an enabled subscription plan may create subscriber-only content'
+      }
+    };
+  }
+
+  if (contentKind === 'story' && !previewText) {
+    return {
+      status: 400,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Preview text is required for subscriber-only stories',
+        field: 'previewText'
+      }
+    };
+  }
+
+  return null;
+}
+
 function encodeFeedCursor(payload) {
   return Buffer.from(JSON.stringify(payload)).toString('base64url');
 }
@@ -179,8 +222,64 @@ function buildFeedSearchCondition(rawQuery) {
   return { $or: clauses };
 }
 
-function buildFeedBaseQuery({ rawQuery, tag }) {
+async function loadActiveSubscribedArtistIds(userId) {
+  if (!userId || !mongoose.Types.ObjectId.isValid(userId)) {
+    return [];
+  }
+
+  const activeSubscriptions = await ArtistSubscription.find({
+    subscriber: new mongoose.Types.ObjectId(userId),
+    status: 'active',
+    expiresAt: { $gt: new Date() }
+  })
+    .select('artist')
+    .lean();
+
+  return [...new Set(
+    activeSubscriptions
+      .map((item) => item?.artist)
+      .filter((artistId) => mongoose.Types.ObjectId.isValid(artistId))
+      .map((artistId) => String(artistId))
+  )].map((artistId) => new mongoose.Types.ObjectId(artistId));
+}
+
+async function buildAccessControlQuery(userId, isAdmin) {
+  // Admins see all posts regardless of access type
+  if (isAdmin) {
+    return null;
+  }
+
+  // Non-admin users see: public posts + posts with no accessType + their own posts
+  const accessOrConditions = [
+    { accessType: 'public' },
+    { accessType: { $exists: false } } // backward compat
+  ];
+
+  if (userId) {
+    accessOrConditions.push({
+      author: new mongoose.Types.ObjectId(userId)
+    });
+
+    const subscribedArtistIds = await loadActiveSubscribedArtistIds(userId);
+    if (subscribedArtistIds.length > 0) {
+      accessOrConditions.push({
+        accessType: ACCESS_TYPE_SUBSCRIBER_ONLY,
+        author: { $in: subscribedArtistIds }
+      });
+    }
+  }
+
+  return { $or: accessOrConditions };
+}
+
+async function buildFeedBaseQuery({ rawQuery, tag, userId, isAdmin }) {
   let query = { status: 'approved' };
+  
+  const accessQuery = await buildAccessControlQuery(userId, isAdmin);
+  if (accessQuery) {
+    query = combineMongoQuery(query, accessQuery);
+  }
+  
   const searchCondition = buildFeedSearchCondition(rawQuery);
   const tagCondition = buildTagSearchConditions(tag)[0] || null;
 
@@ -351,8 +450,8 @@ async function fetchTrendingFeedItemsForModel(Model, baseQuery, cursor, limit) {
   return Model.aggregate(pipeline);
 }
 
-async function loadHomeFeedPage({ sortBy, type, rawQuery, tag, cursor, limit }) {
-  const baseQuery = buildFeedBaseQuery({ rawQuery, tag });
+async function loadHomeFeedPage({ sortBy, type, rawQuery, tag, cursor, limit, userId, isAdmin }) {
+  const baseQuery = await buildFeedBaseQuery({ rawQuery, tag, userId, isAdmin });
   const models = type === 'story'
     ? [Story]
     : type === 'artwork'
@@ -824,6 +923,17 @@ export async function createStory(req, res) {
       return res.status(400).json(buildRequiredHashtagError());
     }
 
+    const accessType = normalizeAccessType(req.body.accessType);
+    const previewText = normalizePreviewText(req.body.previewText);
+    const accessError = validateSubscriberOnlyAccess(req.user, accessType, 'story', previewText);
+
+    if (accessError) {
+      return res.status(accessError.status).json({
+        success: false,
+        error: accessError.error
+      });
+    }
+
     const images = resolveImagesFromRequest(req);
 
     const story = new Story({
@@ -833,7 +943,9 @@ export async function createStory(req, res) {
       tags: parsedTags.tags,
       images,
       author: req.user.userId,
-      status: normalizePublishStatus(status)
+      status: normalizePublishStatus(status),
+      accessType,
+      previewText
     });
 
     await story.save();
@@ -910,13 +1022,24 @@ export async function createArtwork(req, res) {
       });
     }
 
+    const accessType = normalizeAccessType(req.body.accessType);
+    const accessError = validateSubscriberOnlyAccess(req.user, accessType, 'artwork');
+
+    if (accessError) {
+      return res.status(accessError.status).json({
+        success: false,
+        error: accessError.error
+      });
+    }
+
     const artwork = new Artwork({
       title,
       description,
       images,
       tags: parsedTags.tags,
       author: req.user.userId,
-      status: normalizePublishStatus(status)
+      status: normalizePublishStatus(status),
+      accessType
     });
 
     await artwork.save();
@@ -1005,17 +1128,126 @@ export async function getContent(req, res) {
       });
     }
 
-    // Increment view counter
-    content.views += 1;
-    await content.save();
+    // Check access control for subscriber-only content
+    const contentAccessType = content.accessType || ACCESS_TYPE_PUBLIC;
+    let isPreviewOnly = false;
+    let hasFullAccess = true;
 
-    if (req.user?.userId) {
+    if (contentAccessType === ACCESS_TYPE_SUBSCRIBER_ONLY) {
+      const isOwner = req.user?.userId === content.author._id.toString();
+      const isAdmin = req.user?.role === 'admin';
+      const isSubscriber = req.user
+        ? await hasActiveArtistSubscription(req.user.userId, content.author._id)
+        : false;
+
+      if (!isOwner && !isAdmin && !isSubscriber) {
+        isPreviewOnly = true;
+        hasFullAccess = false;
+      }
+    }
+
+    // Increment view counter only for full access
+    if (!isPreviewOnly) {
+      content.views += 1;
+      await content.save();
+    }
+
+    if (req.user?.userId && !isPreviewOnly) {
       await updateReadingHistory(req.user.userId, content._id, contentType);
+    }
+
+    // Build response
+    if (isPreviewOnly) {
+      // Fetch artist subscription info for metadata
+      const artist = await User.findById(content.author._id).select('subscriptionEnabled subscriptionPrice subscriptionAbout');
+      
+      // Check viewer's subscription status if authenticated
+      let viewerSubscriptionStatus = 'none';
+      if (req.user?.userId) {
+        const userSubscription = await ArtistSubscription.findOne({
+          subscriber: req.user.userId,
+          artist: content.author._id
+        }).sort({ createdAt: -1 });
+        
+        if (userSubscription) {
+          if (userSubscription.status === 'active') {
+            viewerSubscriptionStatus = 'active';
+          } else if (userSubscription.status === 'expired') {
+            viewerSubscriptionStatus = 'expired';
+          } else if (userSubscription.status === 'cancelled') {
+            viewerSubscriptionStatus = 'cancelled';
+          } else if (userSubscription.status === 'pending') {
+            viewerSubscriptionStatus = 'pending';
+          }
+        }
+      }
+
+      // Return preview-safe data for subscriber-only content
+      const previewResponse = {
+        _id: content._id,
+        type: contentType,
+        title: content.title,
+        author: content.author,
+        createdAt: content.createdAt,
+        views: content.views,
+        likes: content.likes?.length || 0,
+        bookmarks: content.bookmarks?.length || 0,
+        accessType: content.accessType,
+        hasAccess: false,
+        requiresSubscription: true,
+        artistId: content.author._id,
+        artistSubscription: {
+          enabled: artist?.subscriptionEnabled || false,
+          price: artist?.subscriptionPrice || 0,
+          about: artist?.subscriptionAbout || ''
+        },
+        viewerSubscriptionStatus
+      };
+
+      // Include preview-specific fields
+      if (contentType === 'Story') {
+        previewResponse.previewText = content.previewText || '';
+      } else if (contentType === 'Artwork') {
+        previewResponse.firstImage = content.images?.[0] || null;
+      }
+
+      return res.status(200).json({
+        success: true,
+        data: previewResponse
+      });
+    }
+
+    // Full access granted - add access flags and metadata to response
+    const responseData = content.toObject();
+    responseData.hasAccess = true;
+    responseData.requiresSubscription = contentAccessType === ACCESS_TYPE_SUBSCRIBER_ONLY;
+    responseData.artistId = content.author._id;
+
+    // Add viewer subscription status for full access responses
+    if (req.user?.userId && contentAccessType === ACCESS_TYPE_SUBSCRIBER_ONLY) {
+      const userSubscription = await ArtistSubscription.findOne({
+        subscriber: req.user.userId,
+        artist: content.author._id
+      }).sort({ createdAt: -1 });
+      
+      let viewerSubscriptionStatus = 'none';
+      if (userSubscription) {
+        if (userSubscription.status === 'active') {
+          viewerSubscriptionStatus = 'active';
+        } else if (userSubscription.status === 'expired') {
+          viewerSubscriptionStatus = 'expired';
+        } else if (userSubscription.status === 'cancelled') {
+          viewerSubscriptionStatus = 'cancelled';
+        } else if (userSubscription.status === 'pending') {
+          viewerSubscriptionStatus = 'pending';
+        }
+      }
+      responseData.viewerSubscriptionStatus = viewerSubscriptionStatus;
     }
 
     return res.status(200).json({
       success: true,
-      data: content
+      data: responseData
     });
   } catch (error) {
     console.error('Get content error:', error);
@@ -1056,7 +1288,9 @@ export async function getHomeFeed(req, res) {
       rawQuery,
       tag,
       cursor,
-      limit
+      limit,
+      userId: req.user?.userId,
+      isAdmin: req.user?.role === 'admin'
     });
 
     return res.status(200).json({
@@ -1094,6 +1328,12 @@ export async function searchContent(req, res) {
     const query = {};
 
     sanitizeStatusFilter(query, req.user, status);
+
+    // Add access control for subscription-based content
+    const accessQuery = await buildAccessControlQuery(req.user?.userId, req.user?.role === 'admin');
+    if (accessQuery) {
+      query.$and = [...(query.$and || []), accessQuery];
+    }
 
     // Search by text in title or description
     if (rawQuery) {
@@ -1252,10 +1492,26 @@ export async function updateContent(req, res) {
     }
 
     const nextStatus = normalizePublishStatus(req.body.status ?? content.status);
+    const requestedAccessType = normalizeAccessType(req.body.accessType ?? content.accessType);
+    const previewText = isStory ? normalizePreviewText(req.body.previewText ?? content.previewText) : '';
+
+    const accessError = validateSubscriberOnlyAccess(req.user, requestedAccessType, isStory ? 'story' : 'artwork', previewText);
+
+    if (accessError) {
+      return res.status(accessError.status).json({
+        success: false,
+        error: accessError.error
+      });
+    }
+
     content.title = req.body.title ?? content.title;
     content.description = req.body.description ?? content.description;
     content.tags = parsedTags.tags;
     content.status = nextStatus;
+    content.accessType = requestedAccessType;
+    if (isStory) {
+      content.previewText = previewText;
+    }
 
     if (isStory) {
       if (!req.body.content || !req.body.content.trim()) {

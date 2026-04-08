@@ -44,6 +44,12 @@ const artworkSchema = new mongoose.Schema({
     enum: ['draft', 'pending', 'approved', 'rejected', 'deleted'],
     default: 'pending'
   },
+  accessType: {
+    type: String,
+    enum: ['public', 'subscriber_only'],
+    default: 'public',
+    index: true
+  },
   likes: {
     type: Number,
     default: 0

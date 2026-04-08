@@ -24,6 +24,7 @@ const NotificationPage = lazy(routeModuleLoaders.notifications);
 const RemovedContentPage = lazy(routeModuleLoaders.postUnavailable);
 const AdminPage = lazy(routeModuleLoaders.admin);
 const SavedPage = lazy(routeModuleLoaders.saved);
+const PaymentReturnPage = lazy(() => import('./pages/PaymentReturnPage'));
 
 function RouteFallback() {
   return (
@@ -93,6 +94,8 @@ function App() {
             <Route path="/saved" element={<SavedPage />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/notifications" element={<NotificationPage />} />
+            <Route path="/payment-return" element={<PaymentReturnPage />} />
+            <Route path="/payment/momo/return" element={<PaymentReturnPage />} />
             <Route path="/post-unavailable" element={<RemovedContentPage />} />
             <Route path="/create-story" element={<CreateStoryPage />} />
             <Route path="/create-artwork" element={<CreateArtworkPage />} />

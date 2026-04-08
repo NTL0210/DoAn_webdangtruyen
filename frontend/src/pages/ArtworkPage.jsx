@@ -6,6 +6,7 @@ import { invalidateContentMutationCaches } from '../services/appDataInvalidation
 import { LazyImage } from '../components/common/LazyImage';
 import { ReportContentButton } from '../components/common/ReportContentButton';
 import { subscribeToContentComments, subscribeToNotificationSocketState } from '../services/notificationService';
+import { createMomoSubscriptionCheckout } from '../services/paymentService';
 import { getRoutePrefetchProps } from '../services/routePrefetch';
 import { formatCount, formatRelative } from '../utils/helpers';
 import { formatTag, normalizeTagList } from '../utils/hashtags';
@@ -34,6 +35,24 @@ function upsertComment(items, nextComment) {
   return [...nextItems].sort((left, right) => new Date(left.createdAt) - new Date(right.createdAt));
 }
 
+function formatMembershipPrice(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0) {
+    return '0 / month';
+  }
+
+  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(amount)} / month`;
+}
+
+function getFriendlySubscriptionStatus(status) {
+  const normalized = String(status || 'none').toLowerCase();
+  if (normalized === 'active') return 'Active member';
+  if (normalized === 'expired') return 'Membership expired';
+  if (normalized === 'cancelled') return 'Membership cancelled';
+  if (normalized === 'pending') return 'Pending activation';
+  return 'Not subscribed';
+}
+
 export default function ArtworkPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -52,6 +71,7 @@ export default function ArtworkPage() {
   const [highlightedCommentId, setHighlightedCommentId] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const [pendingAction, setPendingAction] = useState('');
+  const [subscribeLoading, setSubscribeLoading] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(() => {
     const bookmarks = currentUser.bookmarks || [];
@@ -65,6 +85,7 @@ export default function ArtworkPage() {
   const visibleArtworkImages = artworkImages.slice(0, 4);
   const hiddenArtworkImageCount = Math.max(artworkImages.length - 4, 0);
   const authorAvatarUrl = getAvatarUrl(artwork?.author?.avatar);
+  const isLocked = artwork?.hasAccess === false && artwork?.requiresSubscription;
 
   const isAuthor = artwork?.author?._id === currentUser._id || artwork?.author?._id === currentUser.id;
   const highlightTimeoutRef = useRef(null);
@@ -450,6 +471,38 @@ export default function ArtworkPage() {
     }
   };
 
+  const handleSubscribe = async () => {
+    if (!artwork?.artistId) {
+      return;
+    }
+
+    if (!getToken()) {
+      navigate('/login');
+      return;
+    }
+
+    try {
+      setSubscribeLoading(true);
+      const data = await createMomoSubscriptionCheckout(artwork.artistId);
+
+      if (!data.success) {
+        alert(data.error?.message || 'Failed to start payment checkout');
+        return;
+      }
+
+      if (!data.data?.payUrl) {
+        alert('Payment URL was not returned');
+        return;
+      }
+
+      window.location.href = data.data.payUrl;
+    } catch (err) {
+      alert('Failed to start payment checkout');
+    } finally {
+      setSubscribeLoading(false);
+    }
+  };
+
   if (loading) {
     return <div className="p-8 text-center text-slate-300">Loading...</div>;
   }
@@ -516,15 +569,19 @@ export default function ArtworkPage() {
 
               {artworkImages.length > 0 ? (
                 <div className={`detail-media-grid ${artworkImages.length === 1 ? 'detail-media-grid-single' : ''}`}>
-                  {visibleArtworkImages.map((image, index) => {
+                  {(isLocked ? artworkImages.slice(0, 1) : visibleArtworkImages).map((image, index) => {
                     const showMoreOverlay = index === 3 && hiddenArtworkImageCount > 0;
-                    const isWideLead = visibleArtworkImages.length === 3 && index === 0;
+                    const isWideLead = (!isLocked && visibleArtworkImages.length === 3 && index === 0);
 
                     return (
                       <button
                         key={`${image}-${index}`}
                         type="button"
-                        onClick={() => openViewer(index)}
+                        onClick={() => {
+                          if (!isLocked) {
+                            openViewer(index);
+                          }
+                        }}
                         className={`detail-media-tile ${artworkImages.length === 1 ? 'detail-media-tile-single' : isWideLead ? 'detail-media-tile-featured' : 'detail-media-tile-rect'}`}
                       >
                         <LazyImage
@@ -532,13 +589,54 @@ export default function ArtworkPage() {
                           alt={`${artwork.title} - Preview ${index + 1}`}
                           fallbackSrc={'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23ddd" width="400" height="300"/%3E%3Ctext fill="%23999" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImage not available%3C/text%3E%3C/svg%3E'}
                           wrapperClassName="h-full w-full"
-                          className="h-full w-full object-cover transition duration-300 hover:scale-[1.02]"
+                          className={`h-full w-full object-cover transition duration-300 ${isLocked ? 'blur-sm brightness-75' : 'hover:scale-[1.02]'}`}
                         />
+                        {isLocked ? (
+                          <div className="absolute inset-0 flex items-center justify-center bg-slate-950/35">
+                            <span className="rounded-full border border-white/15 bg-slate-950/80 px-4 py-2 text-sm font-medium text-white">
+                              Subscribers only
+                            </span>
+                          </div>
+                        ) : null}
                         <div className="detail-media-badge">{index + 1}/{artworkImages.length}</div>
                         {showMoreOverlay ? <div className="detail-media-more">+{hiddenArtworkImageCount}</div> : null}
                       </button>
                     );
                   })}
+                </div>
+              ) : null}
+
+              {isLocked ? (
+                <div className="mt-5 rounded-[1.75rem] border border-amber-500/25 bg-[linear-gradient(180deg,rgba(245,158,11,0.14),rgba(15,23,42,0.4))] px-5 py-5">
+                  <p className="text-xs uppercase tracking-[0.2em] text-amber-300">Premium access</p>
+                  <h3 className="mt-2 text-xl font-semibold text-white">Subscribers only artwork</h3>
+                  <p className="mt-3 text-sm leading-6 text-slate-300">
+                    This artwork set is available for active members. Subscribe to unlock all images in full quality.
+                  </p>
+                  <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-300">
+                    <span className="rounded-full border border-slate-700 px-3 py-1">
+                      Membership: {formatMembershipPrice(artwork.artistSubscription?.price)}
+                    </span>
+                    <span className="rounded-full border border-slate-700 px-3 py-1">
+                      Status: {getFriendlySubscriptionStatus(artwork.viewerSubscriptionStatus)}
+                    </span>
+                  </div>
+                  <div className="mt-5 flex flex-wrap gap-3">
+                    <button
+                      type="button"
+                      onClick={handleSubscribe}
+                      disabled={subscribeLoading || artwork.viewerSubscriptionStatus === 'active' || !artwork.artistSubscription?.enabled}
+                      className="rounded-2xl bg-brand px-5 py-3 text-sm font-medium text-white transition hover:bg-brand-light disabled:cursor-not-allowed disabled:opacity-60"
+                    >
+                      {subscribeLoading ? 'Subscribing...' : artwork.viewerSubscriptionStatus === 'active' ? 'Subscribed' : 'Subscribe'}
+                    </button>
+                    <Link
+                      to={`/profile/${artwork.artistId}`}
+                      className="detail-inline-button"
+                    >
+                      View Artist Profile
+                    </Link>
+                  </div>
                 </div>
               ) : null}
 

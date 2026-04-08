@@ -22,7 +22,7 @@ export function authenticateToken(req, res, next) {
     // Verify token
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
     User.findById(decoded.userId)
-      .select('role accountStatus permanentBanReason permanentlyBannedAt postingRestrictedUntil postingRestrictionReason postingRestrictionSource')
+      .select('role accountStatus permanentBanReason permanentlyBannedAt postingRestrictedUntil postingRestrictionReason postingRestrictionSource creatorPlan premiumStatus subscriptionEnabled subscriptionPrice')
       .then((user) => {
         if (!user) {
           return res.status(401).json({
@@ -55,7 +55,11 @@ export function authenticateToken(req, res, next) {
           accountStatus: user.accountStatus,
           postingRestrictedUntil: user.postingRestrictedUntil,
           postingRestrictionReason: user.postingRestrictionReason,
-          postingRestrictionSource: user.postingRestrictionSource
+          postingRestrictionSource: user.postingRestrictionSource,
+          creatorPlan: user.creatorPlan,
+          premiumStatus: user.premiumStatus,
+          subscriptionEnabled: user.subscriptionEnabled,
+          subscriptionPrice: user.subscriptionPrice
         };
 
         return next();

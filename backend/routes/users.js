@@ -1,5 +1,5 @@
 import express from 'express';
-import { getProfile, updateAvatar, followUser, unfollowUser, updateProfile, getFollowers, getFollowing, getReadingHistory, getBookmarkedContent, getLikedContent, getFavoriteTags, addFavoriteTag, removeFavoriteTag, searchCreators } from '../controllers/UserController.js';
+import { getProfile, updateAvatar, followUser, unfollowUser, updateProfile, getFollowers, getFollowing, getReadingHistory, getBookmarkedContent, getLikedContent, getFavoriteTags, addFavoriteTag, removeFavoriteTag, searchCreators, subscribeToArtist, unsubscribeFromArtist, getArtistSubscriptionInfo, getUserSubscriptions, updateSubscriptionSettings } from '../controllers/UserController.js';
 import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 import { cacheResponse } from '../middleware/cacheResponse.js';
 import { rateLimitRead, rateLimitSearch } from '../middleware/rateLimit.js';
@@ -70,5 +70,20 @@ router.get('/users/:id/followers', rateLimitRead, getFollowers);
 
 // GET /api/users/:id/following - Get following list
 router.get('/users/:id/following', rateLimitRead, getFollowing);
+
+// POST /api/users/:id/subscribe - Subscribe to an artist
+router.post('/users/:id/subscribe', authenticateToken, subscribeToArtist);
+
+// DELETE /api/users/:id/subscribe - Unsubscribe from an artist
+router.delete('/users/:id/subscribe', authenticateToken, unsubscribeFromArtist);
+
+// GET /api/users/:id/subscription-info - Get artist's subscription info
+router.get('/users/:id/subscription-info', optionalAuth, getArtistSubscriptionInfo);
+
+// GET /api/users/me/subscriptions - Get current user's subscriptions
+router.get('/users/me/subscriptions', authenticateToken, getUserSubscriptions);
+
+// PUT /api/users/me/subscription-settings - Update subscription settings
+router.put('/users/me/subscription-settings', authenticateToken, updateSubscriptionSettings);
 
 export default router;

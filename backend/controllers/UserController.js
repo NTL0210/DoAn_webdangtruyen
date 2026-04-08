@@ -2,6 +2,7 @@ import User from '../models/User.js';
 import Story from '../models/Story.js';
 import Artwork from '../models/Artwork.js';
 import Follow from '../models/Follow.js';
+import ArtistSubscription from '../models/ArtistSubscription.js';
 import { CACHE_NAMESPACES, getOrSetNamespacedCache, invalidateCacheNamespaces } from '../services/cacheStore.js';
 import webSocketManager from '../websocket/WebSocketManager.js';
 import { buildSearchNameFields, escapeRegex, normalizeSearchText, similarityScore, tokenizeSearchText } from '../utils/search.js';
@@ -926,6 +927,352 @@ export async function getLikedContent(req, res) {
     return await getUserSavedContent(req, res, 'likes');
   } catch (error) {
     console.error('Get liked content error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'An unexpected error occurred'
+      }
+    });
+  }
+}
+
+// Subscribe to an artist (create subscription)
+export async function subscribeToArtist(req, res) {
+  try {
+    const { id: artistId } = req.params;
+    const subscriberId = req.user.userId;
+
+    // Check if trying to subscribe to self
+    if (artistId === subscriberId) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Cannot subscribe to yourself'
+        }
+      });
+    }
+
+    // Check if artist exists and has subscriptions enabled
+    const artist = await User.findById(artistId).select('username subscriptionEnabled subscriptionPrice premiumStatus creatorPlan');
+    if (!artist) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'NOT_FOUND',
+          message: 'Artist not found'
+        }
+      });
+    }
+
+    const isPremiumArtist = artist.creatorPlan === 'premium_artist' && artist.premiumStatus === 'active';
+
+    if (!isPremiumArtist || !artist.subscriptionEnabled) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'SUBSCRIPTION_DISABLED',
+          message: 'This artist does not offer subscriptions'
+        }
+      });
+    }
+
+    // Check for existing active subscription
+    const existingSubscription = await ArtistSubscription.findOne({
+      subscriber: subscriberId,
+      artist: artistId,
+      status: 'active'
+    });
+
+    if (existingSubscription) {
+      return res.status(409).json({
+        success: false,
+        error: {
+          code: 'DUPLICATE_ERROR',
+          message: 'You already have an active subscription to this artist'
+        }
+      });
+    }
+
+    // Create subscription
+    const now = new Date();
+    const expiresAt = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000); // 30 days
+
+    const subscription = new ArtistSubscription({
+      subscriber: subscriberId,
+      artist: artistId,
+      priceAtPurchase: artist.subscriptionPrice || 0,
+      status: 'active',
+      startedAt: now,
+      expiresAt
+    });
+
+    await subscription.save();
+
+    // Notify artist
+    await webSocketManager.sendNotification(artistId, {
+      recipient: artistId,
+      type: 'subscription',
+      from: subscriberId,
+      message: 'New subscriber'
+    });
+
+    return res.status(201).json({
+      success: true,
+      message: 'Successfully subscribed to artist',
+      data: {
+        subscriptionId: subscription._id,
+        artistId,
+        expiresAt
+      }
+    });
+  } catch (error) {
+    console.error('Subscribe to artist error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'An unexpected error occurred'
+      }
+    });
+  }
+}
+
+// Unsubscribe from an artist
+export async function unsubscribeFromArtist(req, res) {
+  try {
+    const { id: artistId } = req.params;
+    const subscriberId = req.user.userId;
+
+    const subscription = await ArtistSubscription.findOne({
+      subscriber: subscriberId,
+      artist: artistId,
+      status: { $in: ['active', 'pending'] }
+    });
+
+    if (!subscription) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'NOT_FOUND',
+          message: 'No active subscription found'
+        }
+      });
+    }
+
+    subscription.status = 'cancelled';
+    await subscription.save();
+
+    return res.status(200).json({
+      success: true,
+      message: 'Successfully cancelled subscription'
+    });
+  } catch (error) {
+    console.error('Unsubscribe from artist error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'An unexpected error occurred'
+      }
+    });
+  }
+}
+
+// Get artist's subscription info (name, price, description, current user's subscription status if any)
+export async function getArtistSubscriptionInfo(req, res) {
+  try {
+    const { id: artistId } = req.params;
+    const currentUserId = req.user?.userId;
+
+    const artist = await User.findById(artistId).select(
+      'username avatar subscriptionEnabled subscriptionPrice subscriptionAbout premiumStatus creatorPlan'
+    );
+
+    if (!artist) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'NOT_FOUND',
+          message: 'Artist not found'
+        }
+      });
+    }
+
+    const info = {
+      artistId: artist._id,
+      username: artist.username,
+      avatar: artist.avatar,
+      subscriptionEnabled: artist.subscriptionEnabled,
+      subscriptionPrice: artist.subscriptionPrice,
+      subscriptionAbout: artist.subscriptionAbout,
+      isPremium: artist.creatorPlan === 'premium_artist' && artist.premiumStatus === 'active',
+      userSubscriptionStatus: 'none'
+    };
+
+    // Check current user's subscription status if authenticated
+    if (currentUserId) {
+      const userSubscription = await ArtistSubscription.findOne({
+        subscriber: currentUserId,
+        artist: artistId
+      }).sort({ createdAt: -1 });
+
+      if (userSubscription && userSubscription.status === 'active') {
+        info.userSubscriptionStatus = 'active';
+        info.userSubscriptionExpiresAt = userSubscription.expiresAt;
+      } else if (userSubscription && userSubscription.status === 'expired') {
+        info.userSubscriptionStatus = 'expired';
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: info
+    });
+  } catch (error) {
+    console.error('Get artist subscription info error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'An unexpected error occurred'
+      }
+    });
+  }
+}
+
+// Get current user's subscriptions
+export async function getUserSubscriptions(req, res) {
+  try {
+    const userId = req.user.userId;
+
+    const subscriptions = await ArtistSubscription.find({ subscriber: userId })
+      .populate('artist', 'username avatar subscriptionPrice')
+      .sort({ createdAt: -1 });
+
+    const data = subscriptions.map((sub) => ({
+      subscriptionId: sub._id,
+      artist: {
+        _id: sub.artist._id,
+        username: sub.artist.username,
+        avatar: sub.artist.avatar,
+        subscriptionPrice: sub.artist.subscriptionPrice
+      },
+      status: sub.status,
+      priceAtPurchase: sub.priceAtPurchase,
+      startedAt: sub.startedAt,
+      expiresAt: sub.expiresAt,
+      createdAt: sub.createdAt
+    }));
+
+    return res.status(200).json({
+      success: true,
+      data
+    });
+  } catch (error) {
+    console.error('Get user subscriptions error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'An unexpected error occurred'
+      }
+    });
+  }
+}
+
+// Update artist's subscription settings (price, description, enabled status)
+export async function updateSubscriptionSettings(req, res) {
+  try {
+    const userId = req.user.userId;
+    const { subscriptionPrice, subscriptionAbout, subscriptionEnabled } = req.body;
+    const user = await User.findById(userId).select('creatorPlan premiumStatus');
+
+    if (!user) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'NOT_FOUND',
+          message: 'User not found'
+        }
+      });
+    }
+
+    if (user.creatorPlan !== 'premium_artist' || user.premiumStatus !== 'active') {
+      return res.status(403).json({
+        success: false,
+        error: {
+          code: 'FORBIDDEN',
+          message: 'Only active premium artists can update subscription settings'
+        }
+      });
+    }
+
+    const updates = {};
+
+    // Validate and build updates
+    if (subscriptionPrice !== undefined) {
+      const price = Number(subscriptionPrice);
+      if (Number.isNaN(price) || price < 0) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Subscription price must be a non-negative number',
+            field: 'subscriptionPrice'
+          }
+        });
+      }
+      updates.subscriptionPrice = price;
+    }
+
+    if (subscriptionAbout !== undefined) {
+      const about = String(subscriptionAbout).trim();
+      if (about.length > 500) {
+        return res.status(400).json({
+          success: false,
+          error: {
+            code: 'VALIDATION_ERROR',
+            message: 'Subscription description must not exceed 500 characters',
+            field: 'subscriptionAbout'
+          }
+        });
+      }
+      updates.subscriptionAbout = about;
+    }
+
+    if (subscriptionEnabled !== undefined) {
+      updates.subscriptionEnabled = Boolean(subscriptionEnabled);
+    }
+
+    if (Object.keys(updates).length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'At least one subscription setting is required'
+        }
+      });
+    }
+
+    const updatedUser = await User.findByIdAndUpdate(
+      userId,
+      updates,
+      { new: true }
+    ).select('subscriptionPrice subscriptionAbout subscriptionEnabled');
+
+    return res.status(200).json({
+      success: true,
+      message: 'Subscription settings updated successfully',
+      data: {
+        subscriptionPrice: updatedUser.subscriptionPrice,
+        subscriptionAbout: updatedUser.subscriptionAbout,
+        subscriptionEnabled: updatedUser.subscriptionEnabled
+      }
+    });
+  } catch (error) {
+    console.error('Update subscription settings error:', error);
     return res.status(500).json({
       success: false,
       error: {

@@ -40,6 +40,8 @@ export function ContentCard({ item, onInteractionComplete }) {
   const visibleMediaImages = mediaImages.slice(0, 4);
   const hiddenMediaImageCount = Math.max(mediaImages.length - 4, 0);
   const showArtworkCollage = !isStory && mediaImages.length > 1;
+  const isSubscriberOnly = contentItem.accessType === 'subscriber_only';
+  const isLocked = contentItem.hasAccess === false;
 
   const getFallbackImage = () => (isStory ? STORY_FALLBACK_SVG : IMAGE_FALLBACK_SVG);
 
@@ -128,9 +130,21 @@ export function ContentCard({ item, onInteractionComplete }) {
                 <span className="text-slate-600">·</span>
                 <span className="text-slate-500">{formatRelative(contentItem.createdAt)}</span>
               </div>
-              <span className="mt-2 inline-flex rounded-full border border-slate-700 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-slate-400">
-                {isStory ? 'Story drop' : 'Artwork post'}
-              </span>
+              <div className="mt-2 flex flex-wrap items-center gap-2">
+                <span className="inline-flex rounded-full border border-slate-700 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-slate-400">
+                  {isStory ? 'Story drop' : 'Artwork post'}
+                </span>
+                {isSubscriberOnly ? (
+                  <span className="inline-flex rounded-full border border-amber-500/30 bg-amber-500/10 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-amber-300">
+                    Subscribers only
+                  </span>
+                ) : null}
+                {isLocked ? (
+                  <span className="inline-flex rounded-full border border-slate-600 bg-slate-900/80 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-slate-300">
+                    Locked
+                  </span>
+                ) : null}
+              </div>
             </div>
           </div>
 
@@ -172,6 +186,7 @@ export function ContentCard({ item, onInteractionComplete }) {
                         wrapperClassName="h-full w-full"
                         className="h-full w-full object-cover"
                       />
+                      {isLocked ? <div className="pointer-events-none absolute inset-0 bg-slate-950/20" /> : null}
                       {index === 0 ? (
                         <div className="feed-media-badge">
                           <Images size={12} />
@@ -192,6 +207,13 @@ export function ContentCard({ item, onInteractionComplete }) {
                   wrapperClassName="aspect-[16/10] w-full"
                   className="h-full w-full object-cover"
                 />
+                {isLocked ? (
+                  <div className="pointer-events-none absolute inset-0 flex items-start justify-end p-3">
+                    <span className="rounded-full border border-slate-600 bg-slate-950/80 px-3 py-1 text-[11px] uppercase tracking-[0.22em] text-slate-200">
+                      Locked
+                    </span>
+                  </div>
+                ) : null}
               </Link>
             )}
           </div>

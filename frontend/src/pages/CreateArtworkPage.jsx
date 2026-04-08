@@ -13,6 +13,7 @@ export default function CreateArtworkPage() {
   const isEditMode = Boolean(id);
   const [title, setTitle] = useState('');
   const [description, setDescription] = useState('');
+  const [accessType, setAccessType] = useState('public');
   const [imageItems, setImageItems] = useState([]);
   const [tags, setTags] = useState('');
   const [error, setError] = useState('');
@@ -23,6 +24,7 @@ export default function CreateArtworkPage() {
   const currentUser = getCurrentUser();
   const restrictionEndsAt = currentUser?.postingRestrictedUntil ? new Date(currentUser.postingRestrictedUntil) : null;
   const isPostingRestricted = Boolean(restrictionEndsAt) && restrictionEndsAt > new Date();
+  const canUseSubscriberOnly = currentUser?.creatorPlan === 'premium_artist' && currentUser?.premiumStatus === 'active' && currentUser?.subscriptionEnabled;
 
   useEffect(() => {
     if (!isEditMode) return;
@@ -44,6 +46,7 @@ export default function CreateArtworkPage() {
 
         setTitle(data.data.title || '');
         setDescription(data.data.description || '');
+        setAccessType(data.data.accessType || 'public');
         setTags(normalizeTagList(data.data.tags || []).map((tag) => formatTag(tag)).join(' '));
         setImageItems((data.data.images || []).map((image, index) => createExistingImageItem(image, index)));
       } catch (err) {
@@ -120,6 +123,7 @@ export default function CreateArtworkPage() {
       formData.append('title', title);
       formData.append('description', description);
       formData.append('status', status);
+      formData.append('accessType', accessType);
 
       const parsedTags = parseStrictHashtagInput(tags);
       if (parsedTags.error) {
@@ -247,6 +251,51 @@ export default function CreateArtworkPage() {
             className="input-base resize-none"
             placeholder="Describe your artwork"
           />
+        </div>
+
+        <div className="mb-6">
+          <label className="block text-sm font-medium text-slate-300 mb-2">
+            Visibility
+          </label>
+          <div className="grid gap-3 md:grid-cols-2">
+            <label className={`rounded-2xl border px-4 py-4 transition ${accessType === 'public' ? 'border-brand/40 bg-brand/10' : 'border-slate-800 bg-slate-950/40'}`}>
+              <div className="flex items-start gap-3">
+                <input
+                  type="radio"
+                  name="accessType"
+                  value="public"
+                  checked={accessType === 'public'}
+                  onChange={(event) => setAccessType(event.target.value)}
+                  className="mt-1"
+                />
+                <div>
+                  <p className="font-medium text-white">Public</p>
+                  <p className="mt-1 text-sm text-slate-400">Visible to all readers.</p>
+                </div>
+              </div>
+            </label>
+
+            <label className={`rounded-2xl border px-4 py-4 transition ${accessType === 'subscriber_only' ? 'border-brand/40 bg-brand/10' : 'border-slate-800 bg-slate-950/40'} ${canUseSubscriberOnly ? '' : 'opacity-60'}`}>
+              <div className="flex items-start gap-3">
+                <input
+                  type="radio"
+                  name="accessType"
+                  value="subscriber_only"
+                  checked={accessType === 'subscriber_only'}
+                  onChange={(event) => setAccessType(event.target.value)}
+                  disabled={!canUseSubscriberOnly}
+                  className="mt-1"
+                />
+                <div>
+                  <p className="font-medium text-white">Subscribers only</p>
+                  <p className="mt-1 text-sm text-slate-400">Only active subscribers can view this artwork.</p>
+                  {!canUseSubscriberOnly ? (
+                    <p className="mt-2 text-xs text-amber-300">Requires an active premium artist account with membership enabled.</p>
+                  ) : null}
+                </div>
+              </div>
+            </label>
+          </div>
         </div>
 
         <div className="mb-6">

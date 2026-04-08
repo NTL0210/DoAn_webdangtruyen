@@ -5,6 +5,7 @@ import { getCurrentUser, getToken, subscribeToCurrentUserChange, updateCurrentUs
 import { invalidateContentMutationCaches } from '../services/appDataInvalidation';
 import { ReportContentButton } from '../components/common/ReportContentButton';
 import { subscribeToContentComments, subscribeToNotificationSocketState } from '../services/notificationService';
+import { createMomoSubscriptionCheckout } from '../services/paymentService';
 import { getRoutePrefetchProps } from '../services/routePrefetch';
 import { formatCount, formatRelative } from '../utils/helpers';
 import { formatTag, normalizeTagList } from '../utils/hashtags';
@@ -33,6 +34,24 @@ function upsertComment(items, nextComment) {
   return [...nextItems].sort((left, right) => new Date(left.createdAt) - new Date(right.createdAt));
 }
 
+function formatMembershipPrice(value) {
+  const amount = Number(value);
+  if (!Number.isFinite(amount) || amount < 0) {
+    return '0 / month';
+  }
+
+  return `${new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(amount)} / month`;
+}
+
+function getFriendlySubscriptionStatus(status) {
+  const normalized = String(status || 'none').toLowerCase();
+  if (normalized === 'active') return 'Active member';
+  if (normalized === 'expired') return 'Membership expired';
+  if (normalized === 'cancelled') return 'Membership cancelled';
+  if (normalized === 'pending') return 'Pending activation';
+  return 'Not subscribed';
+}
+
 export default function StoryPage() {
   const { id } = useParams();
   const navigate = useNavigate();
@@ -49,6 +68,7 @@ export default function StoryPage() {
   const [highlightedCommentId, setHighlightedCommentId] = useState('');
   const [isDeleting, setIsDeleting] = useState(false);
   const [pendingAction, setPendingAction] = useState('');
+  const [subscribeLoading, setSubscribeLoading] = useState(false);
   const [isLiked, setIsLiked] = useState(false);
   const [isBookmarked, setIsBookmarked] = useState(() => {
     const bookmarks = currentUser.bookmarks || [];
@@ -58,6 +78,7 @@ export default function StoryPage() {
   const hasHandledAuthIdentityRef = useRef(false);
   const authIdentityKey = `${getToken() ? 'auth' : 'guest'}:${currentUser?._id || currentUser?.id || 'guest'}`;
   const authorAvatarUrl = getAvatarUrl(story?.author?.avatar);
+  const isLocked = story?.hasAccess === false && story?.requiresSubscription;
 
   const isAuthor = story?.author?._id === currentUser._id || story?.author?._id === currentUser.id;
   const highlightTimeoutRef = useRef(null);
@@ -404,6 +425,38 @@ export default function StoryPage() {
     }
   };
 
+  const handleSubscribe = async () => {
+    if (!story?.artistId) {
+      return;
+    }
+
+    if (!getToken()) {
+      navigate('/login');
+      return;
+    }
+
+    try {
+      setSubscribeLoading(true);
+      const data = await createMomoSubscriptionCheckout(story.artistId);
+
+      if (!data.success) {
+        alert(data.error?.message || 'Failed to start payment checkout');
+        return;
+      }
+
+      if (!data.data?.payUrl) {
+        alert('Payment URL was not returned');
+        return;
+      }
+
+      window.location.href = data.data.payUrl;
+    } catch (err) {
+      alert('Failed to start payment checkout');
+    } finally {
+      setSubscribeLoading(false);
+    }
+  };
+
   if (loading) {
     return <div className="p-8 text-center text-slate-300">Loading...</div>;
   }
@@ -468,7 +521,52 @@ export default function StoryPage() {
                 </div>
               ) : null}
 
-              <div className="mt-5 detail-prose whitespace-pre-wrap leading-8">{story.content}</div>
+              {isLocked ? (
+                <div className="mt-5 space-y-5">
+                  <div className="rounded-[1.75rem] border border-amber-500/25 bg-[linear-gradient(180deg,rgba(245,158,11,0.14),rgba(15,23,42,0.4))] px-5 py-5">
+                    <p className="text-xs uppercase tracking-[0.2em] text-amber-300">Premium access</p>
+                    <h3 className="mt-2 text-xl font-semibold text-white">Subscribers only story</h3>
+                    <p className="mt-3 text-sm leading-6 text-slate-300">
+                      This post is available for active members. Subscribe to read the full story.
+                    </p>
+                    <div className="mt-4 rounded-2xl border border-slate-700/70 bg-slate-950/45 p-4">
+                      <p className="text-xs uppercase tracking-[0.2em] text-slate-400">Preview</p>
+                      <p
+                        className="mt-2 break-words whitespace-pre-wrap text-sm leading-7 text-slate-100 overflow-hidden"
+                        style={{ display: '-webkit-box', WebkitLineClamp: 6, WebkitBoxOrient: 'vertical' }}
+                      >
+                        {story.previewText || 'No preview text was provided by this creator yet.'}
+                      </p>
+                    </div>
+                    <div className="mt-4 flex flex-wrap items-center gap-3 text-sm text-slate-300">
+                      <span className="rounded-full border border-slate-700 px-3 py-1">
+                        Membership: {formatMembershipPrice(story.artistSubscription?.price)}
+                      </span>
+                      <span className="rounded-full border border-slate-700 px-3 py-1">
+                        Status: {getFriendlySubscriptionStatus(story.viewerSubscriptionStatus)}
+                      </span>
+                    </div>
+                    <div className="mt-5 flex flex-wrap gap-3">
+                      <button
+                        type="button"
+                        onClick={handleSubscribe}
+                        disabled={subscribeLoading || story.viewerSubscriptionStatus === 'active' || !story.artistSubscription?.enabled}
+                        className="rounded-2xl bg-brand px-5 py-3 text-sm font-medium text-white transition hover:bg-brand-light disabled:cursor-not-allowed disabled:opacity-60"
+                      >
+                        {subscribeLoading ? 'Subscribing...' : story.viewerSubscriptionStatus === 'active' ? 'Subscribed' : 'Subscribe'}
+                      </button>
+                      <Link
+                        to={`/profile/${story.artistId}`}
+                        className="detail-inline-button"
+                      >
+                        View Artist Profile
+                      </Link>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-5 detail-prose whitespace-pre-wrap leading-8">{story.content}</div>
+              )}
 
               <div className="detail-post-meta-line">{new Date(story.createdAt).toLocaleString()}</div>
 

@@ -5,7 +5,9 @@ import { getCurrentUser, getToken, setCurrentUser, subscribeToCurrentUserChange,
 import { invalidateContentMutationCaches, invalidateCreatorPresentationCaches } from '../services/appDataInvalidation';
 import { emitCreatorPresentationRefresh } from '../services/creatorPresentationEvents';
 import { fetchJsonWithCache, FRONTEND_CACHE_NAMESPACES, getFrontendCacheScope, invalidateFrontendCache } from '../services/frontendCache';
+import { createMomoPremiumCheckout, createMomoSubscriptionCheckout } from '../services/paymentService';
 import { getRoutePrefetchProps } from '../services/routePrefetch';
+import { getSubscriptionInfo, unsubscribeFromArtist, updateSubscriptionSettings } from '../services/subscriptionService';
 import { formatCount, formatRelative } from '../utils/helpers';
 import { validateSingleImageBeforeUpload } from '../utils/fileValidation';
 import { formatTag, normalizeTagList } from '../utils/hashtags';
@@ -32,6 +34,21 @@ export default function ProfilePage() {
   const [relationView, setRelationView] = useState('');
   const [authUser, setAuthUser] = useState(() => getCurrentUser());
   const [pendingInteractionKey, setPendingInteractionKey] = useState('');
+  const [subscriptionInfo, setSubscriptionInfo] = useState(null);
+  const [subscriptionLoading, setSubscriptionLoading] = useState(false);
+  const [subscriptionError, setSubscriptionError] = useState('');
+  const [subscriptionNotice, setSubscriptionNotice] = useState('');
+  const [subscriptionAction, setSubscriptionAction] = useState('');
+  const [membershipForm, setMembershipForm] = useState({
+    subscriptionEnabled: false,
+    subscriptionPrice: '0',
+    subscriptionAbout: ''
+  });
+  const [savingMembership, setSavingMembership] = useState(false);
+  const [showPremiumPlanModal, setShowPremiumPlanModal] = useState(false);
+  const [premiumPlan, setPremiumPlan] = useState('monthly');
+  const [premiumCheckoutLoading, setPremiumCheckoutLoading] = useState(false);
+  const [premiumCheckoutError, setPremiumCheckoutError] = useState('');
   const [profileForm, setProfileForm] = useState({
     username: '',
     email: '',
@@ -53,6 +70,10 @@ export default function ProfilePage() {
     fetchProfile();
     if (isOwnProfile) {
       fetchReadingHistory();
+      setSubscriptionInfo(null);
+      setSubscriptionError('');
+    } else {
+      fetchSubscriptionInfo();
     }
     fetchFollowingPreview();
   }, [resolvedUserId, isOwnProfile]);
@@ -92,6 +113,11 @@ export default function ProfilePage() {
         email: data.data.user.email || '',
         bio: data.data.user.bio || ''
       });
+      setMembershipForm({
+        subscriptionEnabled: Boolean(data.data.user.subscriptionEnabled),
+        subscriptionPrice: String(data.data.user.subscriptionPrice ?? 0),
+        subscriptionAbout: data.data.user.subscriptionAbout || ''
+      });
       setError('');
     } catch (err) {
       setError(`Failed to load profile: ${err.message}`);
@@ -114,6 +140,26 @@ export default function ProfilePage() {
       }
     } catch (err) {
       console.error('Failed to load reading history:', err);
+    }
+  };
+
+  const fetchSubscriptionInfo = async () => {
+    try {
+      setSubscriptionLoading(true);
+      setSubscriptionError('');
+
+      const data = await getSubscriptionInfo(resolvedUserId);
+
+      if (!data.success) {
+        setSubscriptionError(data.error?.message || 'Failed to load membership info');
+        return;
+      }
+
+      setSubscriptionInfo(data.data || null);
+    } catch (err) {
+      setSubscriptionError('Failed to load membership info');
+    } finally {
+      setSubscriptionLoading(false);
     }
   };
 
@@ -296,6 +342,111 @@ export default function ProfilePage() {
     }
   };
 
+  const handleMembershipSubmit = async (event) => {
+    event.preventDefault();
+    setSavingMembership(true);
+    setSubscriptionError('');
+    setSubscriptionNotice('');
+
+    try {
+      const data = await updateSubscriptionSettings({
+        subscriptionEnabled: membershipForm.subscriptionEnabled,
+        subscriptionPrice: Number(membershipForm.subscriptionPrice || 0),
+        subscriptionAbout: membershipForm.subscriptionAbout
+      });
+
+      if (!data.success) {
+        setSubscriptionError(data.error?.message || 'Failed to update membership settings');
+        return;
+      }
+
+      setProfile((prev) => (prev ? { ...prev, ...data.data } : prev));
+      setCurrentUser({
+        ...currentUser,
+        ...data.data
+      });
+      setSubscriptionNotice(data.message || 'Membership settings updated successfully');
+      invalidateFrontendCache([FRONTEND_CACHE_NAMESPACES.PROFILE]);
+    } catch (err) {
+      setSubscriptionError('Failed to update membership settings');
+    } finally {
+      setSavingMembership(false);
+    }
+  };
+
+  const handleStartPremiumCheckout = async () => {
+    setPremiumCheckoutLoading(true);
+    setPremiumCheckoutError('');
+
+    try {
+      const data = await createMomoPremiumCheckout(premiumPlan);
+
+      if (!data.success) {
+        setPremiumCheckoutError(data.error?.message || 'Failed to start premium checkout');
+        return;
+      }
+
+      if (!data.data?.payUrl) {
+        setPremiumCheckoutError('Payment URL was not returned');
+        return;
+      }
+
+      window.location.href = data.data.payUrl;
+    } catch (err) {
+      setPremiumCheckoutError('Failed to start premium checkout');
+    } finally {
+      setPremiumCheckoutLoading(false);
+    }
+  };
+
+  const handleSubscribe = async () => {
+    setSubscriptionAction('subscribe');
+    setSubscriptionError('');
+    setSubscriptionNotice('');
+
+    try {
+      const data = await createMomoSubscriptionCheckout(resolvedUserId);
+
+      if (!data.success) {
+        setSubscriptionError(data.error?.message || 'Failed to start payment checkout');
+        return;
+      }
+
+      if (!data.data?.payUrl) {
+        setSubscriptionError('Payment URL was not returned');
+        return;
+      }
+
+      window.location.href = data.data.payUrl;
+    } catch (err) {
+      setSubscriptionError('Failed to start payment checkout');
+    } finally {
+      setSubscriptionAction('');
+    }
+  };
+
+  const handleUnsubscribe = async () => {
+    setSubscriptionAction('unsubscribe');
+    setSubscriptionError('');
+    setSubscriptionNotice('');
+
+    try {
+      const data = await unsubscribeFromArtist(resolvedUserId);
+
+      if (!data.success) {
+        setSubscriptionError(data.error?.message || 'Failed to unsubscribe');
+        return;
+      }
+
+      setSubscriptionNotice(data.message || 'Subscription cancelled');
+      await fetchSubscriptionInfo();
+    } catch (err) {
+      setSubscriptionError('Failed to unsubscribe');
+    } finally {
+      setSubscriptionAction('');
+    }
+  };
+
   const handleContentInteraction = async (contentId, action) => {
     if (!getToken()) {
       alert('Please login to like or bookmark posts.');
@@ -361,6 +512,9 @@ export default function ProfilePage() {
   }
 
   const relationData = relationView === 'followers' ? followers : followingList;
+  const isPremiumCreator = profile?.creatorPlan === 'premium_artist' && profile?.premiumStatus === 'active';
+  const canShowSubscriptionCard = !isOwnProfile && Boolean(subscriptionInfo?.subscriptionEnabled);
+  const canShowPremiumUpgradeCard = isOwnProfile && profile?.creatorPlan !== 'premium_artist';
 
   return (
     <div className="detail-shell max-w-7xl">
@@ -506,6 +660,171 @@ export default function ProfilePage() {
           </div>
         </form>
       ) : null}
+
+      {canShowPremiumUpgradeCard ? (
+        <section className="detail-card p-6">
+          <div className="flex flex-col gap-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <p className="detail-eyebrow">Creator plan</p>
+              <h2 className="mt-2 text-xl font-semibold text-white">Become Premium Artist</h2>
+              <p className="mt-2 text-sm text-slate-400">
+                Upgrade your account to unlock premium artist features and subscription controls.
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setShowPremiumPlanModal(true);
+                setPremiumCheckoutError('');
+              }}
+              className="inline-flex items-center justify-center rounded-2xl bg-brand px-5 py-2.5 text-sm font-medium text-white transition hover:bg-brand-light"
+            >
+              Upgrade to Premium
+            </button>
+          </div>
+        </section>
+      ) : null}
+
+      <section className="detail-card p-6">
+        <div className="flex items-center justify-between gap-3">
+          <div>
+            <p className="detail-eyebrow">Premium Artist</p>
+            <h2 className="mt-2 text-xl font-semibold text-white">Membership</h2>
+          </div>
+          {isOwnProfile && isPremiumCreator ? (
+            <span className="rounded-full border border-emerald-500/30 bg-emerald-500/10 px-3 py-1 text-sm text-emerald-300">
+              Premium artist active
+            </span>
+          ) : null}
+        </div>
+
+        {subscriptionError ? (
+          <div className="mt-5 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+            {subscriptionError}
+          </div>
+        ) : null}
+
+        {subscriptionNotice ? (
+          <div className="mt-5 rounded-2xl border border-emerald-500/30 bg-emerald-500/10 px-4 py-3 text-sm text-emerald-300">
+            {subscriptionNotice}
+          </div>
+        ) : null}
+
+        {isOwnProfile ? (
+          isPremiumCreator ? (
+            <form onSubmit={handleMembershipSubmit} className="mt-5 space-y-5">
+              <label className="flex items-center justify-between gap-4 rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-4">
+                <div>
+                  <p className="font-medium text-white">Enable membership</p>
+                  <p className="mt-1 text-sm text-slate-400">Allow readers to subscribe to your monthly membership.</p>
+                </div>
+                <input
+                  type="checkbox"
+                  checked={membershipForm.subscriptionEnabled}
+                  onChange={(event) => setMembershipForm((prev) => ({ ...prev, subscriptionEnabled: event.target.checked }))}
+                  className="h-4 w-4"
+                />
+              </label>
+
+              <div className="grid gap-5 lg:grid-cols-2">
+                <div>
+                  <label className="mb-2 block text-sm font-medium text-slate-300">Monthly price</label>
+                  <input
+                    type="number"
+                    min="0"
+                    step="1"
+                    value={membershipForm.subscriptionPrice}
+                    onChange={(event) => setMembershipForm((prev) => ({ ...prev, subscriptionPrice: event.target.value }))}
+                    className="input-base"
+                  />
+                </div>
+
+                <div className="lg:col-span-2">
+                  <label className="mb-2 block text-sm font-medium text-slate-300">Membership description</label>
+                  <textarea
+                    value={membershipForm.subscriptionAbout}
+                    onChange={(event) => setMembershipForm((prev) => ({ ...prev, subscriptionAbout: event.target.value }))}
+                    className="input-base resize-none"
+                    rows={4}
+                    maxLength={500}
+                    placeholder="Tell members what they get from your subscription."
+                  />
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <button
+                  type="submit"
+                  disabled={savingMembership}
+                  className="inline-flex items-center justify-center rounded-2xl bg-brand px-5 py-2.5 text-sm font-medium text-white transition hover:bg-brand-light disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {savingMembership ? 'Saving...' : 'Save Membership'}
+                </button>
+              </div>
+            </form>
+          ) : (
+            <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-4 text-sm text-slate-300">
+              <p className="font-medium text-white">Membership is not editable on this account.</p>
+              <p className="mt-2">
+                Current plan: {profile?.creatorPlan || 'free'}.
+                {' '}Premium status: {profile?.premiumStatus || 'inactive'}.
+              </p>
+            </div>
+          )
+        ) : subscriptionLoading ? (
+          <div className="mt-5 text-sm text-slate-400">Loading membership info...</div>
+        ) : canShowSubscriptionCard ? (
+          <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-950/40 p-5">
+            <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+              <div className="space-y-2">
+                <p className="text-lg font-semibold text-white">Join {subscriptionInfo?.username}'s membership</p>
+                <p className="text-sm text-slate-400">
+                  {subscriptionInfo?.subscriptionAbout || 'Support this premium artist through a monthly membership.'}
+                </p>
+                <div className="flex flex-wrap gap-2 text-sm text-slate-300">
+                  <span className="rounded-full border border-slate-700 px-3 py-1">
+                    Price: {subscriptionInfo?.subscriptionPrice || 0} / month
+                  </span>
+                  <span className="rounded-full border border-slate-700 px-3 py-1">
+                    Status: {subscriptionInfo?.userSubscriptionStatus || 'none'}
+                  </span>
+                  {subscriptionInfo?.userSubscriptionExpiresAt ? (
+                    <span className="rounded-full border border-slate-700 px-3 py-1">
+                      Expires: {new Date(subscriptionInfo.userSubscriptionExpiresAt).toLocaleDateString()}
+                    </span>
+                  ) : null}
+                </div>
+              </div>
+
+              <div className="flex shrink-0">
+                {subscriptionInfo?.userSubscriptionStatus === 'active' ? (
+                  <button
+                    type="button"
+                    onClick={handleUnsubscribe}
+                    disabled={subscriptionAction === 'unsubscribe'}
+                    className="inline-flex items-center justify-center rounded-2xl border border-slate-700 bg-slate-900 px-6 py-3 text-sm font-medium text-slate-100 transition hover:bg-slate-800 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {subscriptionAction === 'unsubscribe' ? 'Cancelling...' : 'Unsubscribe'}
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={handleSubscribe}
+                    disabled={subscriptionAction === 'subscribe'}
+                    className="inline-flex items-center justify-center rounded-2xl bg-brand px-6 py-3 text-sm font-medium text-white transition hover:bg-brand-light disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {subscriptionAction === 'subscribe' ? 'Subscribing...' : 'Subscribe'}
+                  </button>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-5 rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-4 text-sm text-slate-400">
+            This creator does not currently offer a membership.
+          </div>
+        )}
+      </section>
 
       <section className="detail-card p-6">
         <div className="flex items-center justify-between gap-3">
@@ -712,6 +1031,97 @@ export default function ProfilePage() {
           </div>
         )}
       </div>
+
+      {showPremiumPlanModal ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/75 px-4 py-6">
+          <div className="panel w-full max-w-lg p-6">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="detail-eyebrow">MoMo checkout</p>
+                <h3 className="mt-2 text-xl font-semibold text-white">Choose Premium Artist Plan</h3>
+              </div>
+              <button
+                type="button"
+                onClick={() => {
+                  if (!premiumCheckoutLoading) {
+                    setShowPremiumPlanModal(false);
+                    setPremiumCheckoutError('');
+                  }
+                }}
+                className="detail-inline-button px-3 py-2 text-xs"
+              >
+                Close
+              </button>
+            </div>
+
+            <div className="mt-5 space-y-3">
+              <label className={`block rounded-2xl border px-4 py-4 transition ${premiumPlan === 'monthly' ? 'border-brand/40 bg-brand/10' : 'border-slate-800 bg-slate-950/40'}`}>
+                <div className="flex items-start gap-3">
+                  <input
+                    type="radio"
+                    name="premiumPlan"
+                    value="monthly"
+                    checked={premiumPlan === 'monthly'}
+                    onChange={(event) => setPremiumPlan(event.target.value)}
+                    className="mt-1"
+                    disabled={premiumCheckoutLoading}
+                  />
+                  <div>
+                    <p className="font-medium text-white">Monthly plan</p>
+                    <p className="mt-1 text-sm text-slate-400">99,000 VND / month</p>
+                  </div>
+                </div>
+              </label>
+
+              <label className={`block rounded-2xl border px-4 py-4 transition ${premiumPlan === 'yearly' ? 'border-brand/40 bg-brand/10' : 'border-slate-800 bg-slate-950/40'}`}>
+                <div className="flex items-start gap-3">
+                  <input
+                    type="radio"
+                    name="premiumPlan"
+                    value="yearly"
+                    checked={premiumPlan === 'yearly'}
+                    onChange={(event) => setPremiumPlan(event.target.value)}
+                    className="mt-1"
+                    disabled={premiumCheckoutLoading}
+                  />
+                  <div>
+                    <p className="font-medium text-white">Yearly plan</p>
+                    <p className="mt-1 text-sm text-slate-400">999,000 VND / year</p>
+                  </div>
+                </div>
+              </label>
+            </div>
+
+            {premiumCheckoutError ? (
+              <div className="mt-4 rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
+                {premiumCheckoutError}
+              </div>
+            ) : null}
+
+            <div className="mt-6 flex justify-end gap-3">
+              <button
+                type="button"
+                onClick={() => {
+                  setShowPremiumPlanModal(false);
+                  setPremiumCheckoutError('');
+                }}
+                disabled={premiumCheckoutLoading}
+                className="editor-action-secondary"
+              >
+                Cancel
+              </button>
+              <button
+                type="button"
+                onClick={handleStartPremiumCheckout}
+                disabled={premiumCheckoutLoading}
+                className="editor-action-primary"
+              >
+                {premiumCheckoutLoading ? 'Redirecting...' : 'Continue to MoMo'}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null}
     </div>
   );
 }

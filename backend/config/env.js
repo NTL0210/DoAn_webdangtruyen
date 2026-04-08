@@ -109,6 +109,15 @@ export const env = {
     maxPoolSize: parseIntegerEnv('DB_MAX_POOL_SIZE', 10, { min: 1 }),
     minPoolSize: parseIntegerEnv('DB_MIN_POOL_SIZE', 0, { min: 0 }),
     autoIndex: parseBooleanEnv('DB_AUTO_INDEX', nodeEnv !== 'production' && !isTest)
+  },
+  momo: {
+    partnerCode: readTrimmedEnv('MOMO_PARTNER_CODE'),
+    accessKey: readTrimmedEnv('MOMO_ACCESS_KEY'),
+    secretKey: readTrimmedEnv('MOMO_SECRET_KEY'),
+    endpoint: readTrimmedEnv('MOMO_ENDPOINT', 'https://test-payment.momo.vn/v2/gateway/api/create'),
+    returnUrl: readTrimmedEnv('MOMO_RETURN_URL'),
+    notifyUrl: readTrimmedEnv('MOMO_NOTIFY_URL'),
+    requestType: readTrimmedEnv('MOMO_REQUEST_TYPE', 'captureWallet') || 'captureWallet'
   }
 };
 

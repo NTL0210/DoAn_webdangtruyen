@@ -47,6 +47,17 @@ const storySchema = new mongoose.Schema({
     enum: ['draft', 'pending', 'approved', 'rejected', 'deleted'],
     default: 'pending'
   },
+  accessType: {
+    type: String,
+    enum: ['public', 'subscriber_only'],
+    default: 'public',
+    index: true
+  },
+  previewText: {
+    type: String,
+    trim: true,
+    default: ''
+  },
   likes: {
     type: Number,
     default: 0

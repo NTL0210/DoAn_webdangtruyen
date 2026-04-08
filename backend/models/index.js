@@ -4,6 +4,7 @@ import Comment from './Comment.js';
 import Follow from './Follow.js';
 import ModerationCase from './ModerationCase.js';
 import Notification from './Notification.js';
+import PaymentTransaction from './PaymentTransaction.js';
 import Report from './Report.js';
 import Story from './Story.js';
 import User from './User.js';
@@ -15,6 +16,7 @@ export const registeredModels = [
   Comment,
   Follow,
   Notification,
+  PaymentTransaction,
   Report,
   ModerationCase,
   AccountAppeal
@@ -27,6 +29,7 @@ export {
   Follow,
   ModerationCase,
   Notification,
+  PaymentTransaction,
   Report,
   Story,
   User

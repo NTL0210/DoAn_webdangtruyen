@@ -11,6 +11,7 @@ import commentsRoutes from './routes/comments.js';
 import reportsRoutes from './routes/reports.js';
 import usersRoutes from './routes/users.js';
 import notificationsRoutes from './routes/notifications.js';
+import paymentsRoutes from './routes/payments.js';
 
 const app = express();
 
@@ -30,6 +31,7 @@ app.use('/api', commentsRoutes);
 app.use('/api', reportsRoutes);
 app.use('/api', usersRoutes);
 app.use('/api', notificationsRoutes);
+app.use('/api', paymentsRoutes);
 
 app.get('/health', (req, res) => {
   const database = getDatabaseStatus();

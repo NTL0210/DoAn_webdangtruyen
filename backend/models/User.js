@@ -36,6 +36,39 @@ const userSchema = new mongoose.Schema({
     enum: ['user', 'admin'],
     default: 'user'
   },
+  creatorPlan: {
+    type: String,
+    enum: ['free', 'premium_artist'],
+    default: 'free'
+  },
+  premiumStatus: {
+    type: String,
+    enum: ['inactive', 'active', 'expired'],
+    default: 'inactive'
+  },
+  subscriptionEnabled: {
+    type: Boolean,
+    default: false
+  },
+  subscriptionPrice: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  subscriptionAbout: {
+    type: String,
+    trim: true,
+    maxlength: 500,
+    default: ''
+  },
+  premiumStartedAt: {
+    type: Date,
+    default: null
+  },
+  premiumExpiresAt: {
+    type: Date,
+    default: null
+  },
   isVerified: {
     type: Boolean,
     default: false

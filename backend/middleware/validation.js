@@ -16,6 +16,12 @@ function isValidEmail(email) {
   return emailRegex.test(email);
 }
 
+const CONTENT_ACCESS_TYPES = ['public', 'subscriber_only'];
+
+function sanitizeAccessType(value) {
+  return CONTENT_ACCESS_TYPES.includes(value) ? value : 'public';
+}
+
 function validateRequiredHashtags(tagsInput) {
   const parsedTags = parseTagsInput(tagsInput, {
     strictHashtagFormat: typeof tagsInput === 'string'
@@ -205,6 +211,22 @@ export function validateStory(req, res, next) {
   }
   req.body.tags = tagValidation.tags;
 
+  // Sanitize access type and preview text
+  req.body.accessType = sanitizeAccessType(req.body.accessType);
+  if (req.body.previewText !== undefined) {
+    req.body.previewText = sanitizeText(req.body.previewText).trim();
+    if (req.body.previewText.length > 500) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Preview text must not exceed 500 characters',
+          field: 'previewText'
+        }
+      });
+    }
+  }
+
   next();
 }
 
@@ -282,7 +304,8 @@ export function validateArtwork(req, res, next) {
   }
   req.body.tags = tagValidation.tags;
 
-  next();
+  // Sanitize access type
+  req.body.accessType = sanitizeAccessType(req.body.accessType);
 
   next();
 }
