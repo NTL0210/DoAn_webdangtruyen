@@ -1,4 +1,4 @@
-import { Hash, Search, Users } from 'lucide-react';
+import { Hash, Search, Star, Users } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import HashtagCharts from '../components/HashtagCharts';
@@ -6,6 +6,7 @@ import { ContentCard } from '../components/ContentCard';
 import { EmptyState } from '../components/common/EmptyState';
 import { VirtualizedFeedList } from '../components/feed/VirtualizedFeedList';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
+import { useRightRail } from '../contexts/RightRailContext';
 import { usePagedContentSearch } from '../hooks/usePagedContentSearch';
 import { fetchJsonWithCache, FRONTEND_CACHE_NAMESPACES } from '../services/frontendCache';
 import { formatTag, normalizeTag, normalizeTagList, parseStrictHashtagInput } from '../utils/hashtags';
@@ -65,6 +66,11 @@ function formatMatchQualityLabel(value) {
 }
 
 export default function SearchPage() {
+  const {
+    favoriteTags,
+    favoriteTagBusy,
+    handleFavoriteToggle
+  } = useRightRail();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedView = searchParams.get('view');
   const viewMode = ['content', 'creators', 'tags'].includes(requestedView) ? requestedView : 'content';
@@ -705,7 +711,24 @@ export default function SearchPage() {
                         <p className="text-xs uppercase tracking-[0.18em] text-slate-500 md:hidden">Last used</p>
                         <p className="text-sm text-slate-300">{new Date(tag.latestUsedAt).toLocaleString()}</p>
                       </div>
-                      <div className="flex md:justify-end">
+                      <div className="flex flex-wrap gap-2 md:justify-end">
+                        <button
+                          type="button"
+                          disabled={favoriteTagBusy === normalizeTag(tag.name)}
+                          onClick={async () => {
+                            const normalizedTag = normalizeTag(tag.name);
+                            const result = await handleFavoriteToggle(normalizedTag, favoriteTags.includes(normalizedTag));
+
+                            if (!result.success) {
+                              alert(result.error?.message || 'Failed to update favorite hashtag');
+                            }
+                          }}
+                          className={`detail-inline-button inline-flex items-center gap-2 px-4 py-2 text-sm ${favoriteTags.includes(normalizeTag(tag.name)) ? 'border-amber-400/40 bg-amber-400/10 text-amber-200 hover:border-amber-300/60 hover:text-amber-100' : ''}`}
+                          aria-label={favoriteTags.includes(normalizeTag(tag.name)) ? `Remove ${formatTag(tag.name)} from favorites` : `Save ${formatTag(tag.name)} to favorites`}
+                        >
+                          <Star size={15} fill={favoriteTags.includes(normalizeTag(tag.name)) ? 'currentColor' : 'none'} />
+                          <span>{favoriteTags.includes(normalizeTag(tag.name)) ? 'Saved' : 'Favorite'}</span>
+                        </button>
                         <Link to={`/home?tag=${encodeURIComponent(tag.name)}`} className="detail-inline-button px-4 py-2 text-sm">
                           Open feed
                         </Link>

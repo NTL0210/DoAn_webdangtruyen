@@ -136,6 +136,11 @@ export function useCursorFeed({
     hasMore,
     isLoadingMore,
     loadMoreRef,
-    reload: () => fetchPage({ append: false, cursor: null })
+    reload: () => {
+      setItems([]);
+      setNextCursor(null);
+      setHasMore(true);
+      fetchPage({ append: false, cursor: null });
+    }
   };
 }

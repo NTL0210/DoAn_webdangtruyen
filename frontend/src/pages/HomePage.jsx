@@ -1,6 +1,6 @@
 import { Search, Star } from 'lucide-react';
 import { useDeferredValue, useEffect, useMemo, useState } from 'react';
-import { useSearchParams } from 'react-router-dom';
+import { useLocation, useSearchParams } from 'react-router-dom';
 import { FeedComposer, FeedTabs } from '../components/FeedScaffold';
 import { EmptyState } from '../components/common/EmptyState';
 import { VirtualizedFeedList } from '../components/feed/VirtualizedFeedList';
@@ -9,6 +9,7 @@ import { ContentCard } from '../components/ContentCard';
 import { SAVED_COLLECTION_ENDPOINTS } from '../constants/app';
 import { useCursorFeed } from '../hooks/useCursorFeed';
 import { consumePostLoginNotice, getCurrentUser, getToken, subscribeToCurrentUserChange } from '../services/authService';
+import { FRONTEND_CACHE_NAMESPACES, invalidateFrontendCache } from '../services/frontendCache';
 import { fetchFavoriteTags, toggleFavoriteTag } from '../services/tagPreferenceService';
 import { normalizeTag, normalizeTagList } from '../utils/hashtags';
 
@@ -16,6 +17,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const HOME_FEED_PAGE_SIZE = 10;
 
 export default function HomePage() {
+  const location = useLocation();
   const [savedCollections, setSavedCollections] = useState({
     bookmarked: [],
     liked: []
@@ -58,7 +60,8 @@ export default function HomePage() {
     error,
     hasMore: hasMoreFeed,
     isLoadingMore,
-    loadMoreRef
+    loadMoreRef,
+    reload: reloadFeed
   } = useCursorFeed({
     enabled: !isSavedView,
     params: feedParams,
@@ -176,6 +179,28 @@ export default function HomePage() {
   );
   const favoriteTags = useMemo(() => normalizeTagList(currentUser?.favoriteTags || []), [currentUser?.favoriteTags]);
   const isSelectedTagFavorite = Boolean(selectedTag) && favoriteTags.includes(selectedTag);
+
+  useEffect(() => {
+    if (location.state?.feedTab !== 'home' || !location.state?.feedRefreshKey) {
+      return;
+    }
+
+    invalidateFrontendCache([FRONTEND_CACHE_NAMESPACES.HOME_FEED]);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+
+    const shouldResetFeed = typeFilter !== 'all' || sortBy !== 'newest' || search.trim() !== '';
+
+    if (shouldResetFeed) {
+      setTypeFilter('all');
+      setSortBy('newest');
+      setSearch('');
+      return;
+    }
+
+    if (!selectedTag && !isSavedView) {
+      reloadFeed();
+    }
+  }, [location.state?.feedRefreshKey]);
 
   const clearTagFilter = () => {
     if (searchParams.has('tag')) {

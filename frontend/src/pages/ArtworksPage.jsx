@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
+import { useLocation } from 'react-router-dom';
 import { FeedComposer, FeedTabs } from '../components/FeedScaffold';
 import { ContentCard } from '../components/ContentCard';
 import { EmptyState } from '../components/common/EmptyState';
@@ -6,9 +7,11 @@ import { VirtualizedFeedList } from '../components/feed/VirtualizedFeedList';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { useCursorFeed } from '../hooks/useCursorFeed';
 import { getCurrentUser, subscribeToCurrentUserChange } from '../services/authService';
+import { FRONTEND_CACHE_NAMESPACES, invalidateFrontendCache } from '../services/frontendCache';
 const ARTWORKS_PAGE_SIZE = 10;
 
 export default function ArtworksPage() {
+  const location = useLocation();
   const [currentUser, setCurrentUser] = useState(() => getCurrentUser());
   const feedParams = useMemo(() => ({ sort: 'newest', type: 'artwork' }), []);
   const {
@@ -17,13 +20,24 @@ export default function ArtworksPage() {
     error,
     hasMore,
     isLoadingMore,
-    loadMoreRef
+    loadMoreRef,
+    reload
   } = useCursorFeed({
     params: feedParams,
     limit: ARTWORKS_PAGE_SIZE
   });
 
   useEffect(() => subscribeToCurrentUserChange(setCurrentUser), []);
+
+  useEffect(() => {
+    if (location.state?.feedTab !== 'artworks' || !location.state?.feedRefreshKey) {
+      return;
+    }
+
+    invalidateFrontendCache([FRONTEND_CACHE_NAMESPACES.HOME_FEED]);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+    reload();
+  }, [location.state?.feedRefreshKey]);
 
   return (
     <div className="feed-shell">
