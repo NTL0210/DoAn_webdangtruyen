@@ -226,3 +226,11 @@ GET /api/posts?search=art&tag=fantasy&sort=newest&page=2&limit=10
 ## License
 
 MIT
+
+SMTP Email example for OTP 
+# SMTP settings (optional) - configure to send real emails
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=giapvu10624@gmail.com
+SMTP_PASS=pqfw fjkf stqg ihtd
+EMAIL_FROM=giapvu10624@gmail.com
