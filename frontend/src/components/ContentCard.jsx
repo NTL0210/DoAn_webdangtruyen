@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import { Bookmark, Heart, Images, SquareArrowOutUpRight } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import { LazyImage } from './common/LazyImage';
@@ -16,7 +16,7 @@ const IMAGE_FALLBACK_SVG = `data:image/svg+xml;charset=UTF-8,${encodeURIComponen
   '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675"><defs><linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#111827"/><stop offset="1" stop-color="#0f172a"/></linearGradient></defs><rect width="1200" height="675" fill="url(#bg)"/><rect x="250" y="130" width="700" height="420" rx="30" fill="#0b1222" stroke="#475569" stroke-width="2"/><path d="M320 470 L510 280 L640 380 L760 300 L880 470 Z" fill="#334155"/><circle cx="700" cy="240" r="52" fill="#64748b"/><text x="600" y="585" fill="#cbd5e1" text-anchor="middle" font-size="34" font-family="Arial, sans-serif">Image unavailable</text></svg>'
 )}`;
 
-export function ContentCard({ item, onInteractionComplete }) {
+function ContentCardComponent({ item, onInteractionComplete }) {
   const [contentItem, setContentItem] = useState(item);
   const [currentUser, setCurrentUser] = useState(() => getCurrentUser());
   const [pendingAction, setPendingAction] = useState('');
@@ -228,3 +228,5 @@ export function ContentCard({ item, onInteractionComplete }) {
     </article>
   );
 }
+
+export const ContentCard = memo(ContentCardComponent);

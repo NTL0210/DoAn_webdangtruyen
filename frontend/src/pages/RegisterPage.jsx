@@ -28,8 +28,7 @@ export default function RegisterPage() {
       const result = await register(username, email, password);
 
       if (result.success) {
-        // After successful registration, require email verification
-        navigate(`/verify-email?email=${encodeURIComponent(email)}`);
+        navigate('/login');
       } else {
         setError(result.error.message);
       }

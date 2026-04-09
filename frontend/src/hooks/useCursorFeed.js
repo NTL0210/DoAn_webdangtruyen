@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchJsonWithCache, FRONTEND_CACHE_NAMESPACES } from '../services/frontendCache';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -27,8 +27,12 @@ export function useCursorFeed({
   const [hasMore, setHasMore] = useState(true);
   const [nextCursor, setNextCursor] = useState(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const loadMoreRef = useRef(null);
+  const [loadMoreNode, setLoadMoreNode] = useState(null);
   const requestIdRef = useRef(0);
+
+  const loadMoreRef = useCallback((node) => {
+    setLoadMoreNode(node);
+  }, []);
 
   const baseQueryString = useMemo(() => {
     const searchParams = new URLSearchParams();
@@ -104,7 +108,7 @@ export function useCursorFeed({
       return undefined;
     }
 
-    const node = loadMoreRef.current;
+    const node = loadMoreNode;
     if (!node) {
       return undefined;
     }
@@ -123,7 +127,7 @@ export function useCursorFeed({
     return () => {
       observer.disconnect();
     };
-  }, [enabled, hasMore, isLoadingMore, loading, nextCursor, rootMargin, baseQueryString]);
+  }, [enabled, hasMore, isLoadingMore, loading, nextCursor, rootMargin, baseQueryString, loadMoreNode]);
 
   return {
     items,
@@ -132,6 +136,11 @@ export function useCursorFeed({
     hasMore,
     isLoadingMore,
     loadMoreRef,
-    reload: () => fetchPage({ append: false, cursor: null })
+    reload: () => {
+      setItems([]);
+      setNextCursor(null);
+      setHasMore(true);
+      fetchPage({ append: false, cursor: null });
+    }
   };
 }

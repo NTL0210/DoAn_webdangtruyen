@@ -76,6 +76,10 @@ export default function ProfilePage() {
       });
 
       if (!data.success) {
+        setProfile(null);
+        setContent([]);
+        setStats({ followerCount: 0, followingCount: 0 });
+        setFollowingList([]);
         setError(data.error?.message || 'User not found');
         return;
       }
@@ -94,6 +98,8 @@ export default function ProfilePage() {
       });
       setError('');
     } catch (err) {
+      setProfile(null);
+      setContent([]);
       setError(`Failed to load profile: ${err.message}`);
     } finally {
       setLoading(false);

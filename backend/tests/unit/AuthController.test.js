@@ -1,7 +1,7 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest';
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
-import { register, login, submitAccountAppeal, logout, resendVerificationOtp, verifyEmailOtp, requestPasswordReset, resetPasswordWithOtp } from '../../controllers/AuthController.js';
+import { register, login, submitAccountAppeal, logout, resendVerificationOtp, resendPhoneVerification, verifyPhoneOtp, verifyEmailOtp, requestPasswordReset, resetPasswordWithOtp } from '../../controllers/AuthController.js';
 import User from '../../models/User.js';
 import AccountAppeal from '../../models/AccountAppeal.js';
 import webSocketManager from '../../websocket/WebSocketManager.js';
@@ -54,6 +54,15 @@ vi.mock('../../services/emailService.js', () => ({
 vi.mock('../../services/otpService.js', () => ({
   createOtpForUser: vi.fn(),
   verifyOtpForUser: vi.fn(),
+}));
+vi.mock('../../services/smsService.js', () => ({
+  sendSms: vi.fn().mockResolvedValue({ success: true })
+}));
+vi.mock('../../models/Phone.js', () => ({
+  __esModule: true,
+  default: {
+    updateMany: vi.fn().mockResolvedValue({ modifiedCount: 1 })
+  }
 }));
 
 describe('AuthController', () => {
@@ -463,6 +472,91 @@ describe('AuthController', () => {
       expect(res.json).toHaveBeenCalledWith({
         success: true,
         message: 'Password reset successfully'
+      });
+    });
+  });
+
+  describe('resendPhoneVerification', () => {
+    it('should return 400 if phone number is not provided', async () => {
+      req.body = { phoneNumber: '' };
+
+      await resendPhoneVerification(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
+
+    it('should send phone verification code successfully', async () => {
+      req.body = { phoneNumber: '+84971234567' };
+      User.findOne = vi.fn().mockResolvedValue({
+        _id: 'userId',
+        phoneNumber: '+84971234567',
+        phoneVerified: false,
+        save: vi.fn()
+      });
+      createOtpForUser.mockResolvedValue({ code: '123456' });
+
+      await resendPhoneVerification(req, res);
+
+      expect(User.findOne).toHaveBeenCalledWith({ phoneNumber: '+84971234567' });
+      expect(createOtpForUser).toHaveBeenCalledWith('userId', 'verify');
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        message: 'Verification code sent if the phone exists.'
+      });
+    });
+  });
+
+  describe('verifyPhoneOtp', () => {
+    it('should return 400 if phone or code is missing', async () => {
+      req.body = { phone: '+84971234567' };
+
+      await verifyPhoneOtp(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+    });
+
+    it('should verify phone OTP successfully', async () => {
+      req.body = { phoneNumber: '+84971234567', code: '123456' };
+      const mockUser = {
+        _id: 'userId',
+        phoneNumber: '+84971234567',
+        phoneVerified: false,
+        save: vi.fn().mockResolvedValue()
+      };
+      User.findOne = vi.fn().mockResolvedValue(mockUser);
+      verifyOtpForUser.mockResolvedValue(true);
+
+      await verifyPhoneOtp(req, res);
+
+      expect(User.findOne).toHaveBeenCalledWith({ phoneNumber: '+84971234567' });
+      expect(verifyOtpForUser).toHaveBeenCalledWith('userId', 'verify', '123456');
+      expect(mockUser.phoneVerified).toBe(true);
+      expect(mockUser.save).toHaveBeenCalled();
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(res.json).toHaveBeenCalledWith({
+        success: true,
+        message: 'Phone verified successfully'
+      });
+    });
+
+    it('should return error if OTP is invalid', async () => {
+      req.body = { phoneNumber: '+84971234567', code: '123456' };
+      User.findOne = vi.fn().mockResolvedValue({
+        _id: 'userId',
+        phoneNumber: '+84971234567',
+        phoneVerified: false
+      });
+      verifyOtpForUser.mockResolvedValue(false);
+
+      await verifyPhoneOtp(req, res);
+
+      expect(res.status).toHaveBeenCalledWith(400);
+      expect(res.json).toHaveBeenCalledWith({
+        success: false,
+        error: expect.objectContaining({
+          code: 'INVALID_CODE'
+        })
       });
     });
   });
