@@ -58,6 +58,34 @@ export const rateLimitAuth = createRateLimit({
   }
 });
 
+export const rateLimitOtpSend = createRateLimit({
+  namespace: 'otp-send',
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  keyGenerator: (req) => req.ip || resolveRequestKey(req),
+  message: {
+    success: false,
+    error: {
+      code: 'RATE_LIMIT_EXCEEDED',
+      message: 'Too many OTP send requests. Please try again in 15 minutes'
+    }
+  }
+});
+
+export const rateLimitOtpVerify = createRateLimit({
+  namespace: 'otp-verify',
+  windowMs: 15 * 60 * 1000,
+  max: 5,
+  keyGenerator: (req) => req.ip || resolveRequestKey(req),
+  message: {
+    success: false,
+    error: {
+      code: 'RATE_LIMIT_EXCEEDED',
+      message: 'Too many OTP verification attempts. Please try again in 15 minutes'
+    }
+  }
+});
+
 export const rateLimitContent = createRateLimit({
   namespace: 'content-write',
   windowMs: 60 * 60 * 1000,
@@ -106,6 +134,34 @@ export const rateLimitSearch = createRateLimit({
     error: {
       code: 'RATE_LIMIT_EXCEEDED',
       message: 'Too many search requests. Please try again in a moment'
+    }
+  }
+});
+
+export const rateLimitSmsSend = createRateLimit({
+  namespace: 'sms-send',
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5,
+  keyGenerator: (req) => req.ip || resolveRequestKey(req),
+  message: {
+    success: false,
+    error: {
+      code: 'RATE_LIMIT_EXCEEDED',
+      message: 'Too many SMS send requests. Please try again later.'
+    }
+  }
+});
+
+export const rateLimitSmsVerify = createRateLimit({
+  namespace: 'sms-verify',
+  windowMs: 60 * 60 * 1000, // 1 hour
+  max: 5,
+  keyGenerator: (req) => req.ip || resolveRequestKey(req),
+  message: {
+    success: false,
+    error: {
+      code: 'RATE_LIMIT_EXCEEDED',
+      message: 'Too many verification attempts. Please try again later.'
     }
   }
 });

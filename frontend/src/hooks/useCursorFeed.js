@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { fetchJsonWithCache, FRONTEND_CACHE_NAMESPACES } from '../services/frontendCache';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -18,6 +18,9 @@ export function useCursorFeed({
   params = {},
   limit = 10,
   namespace = FRONTEND_CACHE_NAMESPACES.HOME_FEED,
+  endpoint = '/api/content/feed',
+  scope = 'shared',
+  requestOptions,
   ttlMs = 30 * 1000,
   rootMargin = '900px 0px'
 }) {
@@ -27,8 +30,12 @@ export function useCursorFeed({
   const [hasMore, setHasMore] = useState(true);
   const [nextCursor, setNextCursor] = useState(null);
   const [isLoadingMore, setIsLoadingMore] = useState(false);
-  const loadMoreRef = useRef(null);
+  const [loadMoreNode, setLoadMoreNode] = useState(null);
   const requestIdRef = useRef(0);
+
+  const loadMoreRef = useCallback((node) => {
+    setLoadMoreNode(node);
+  }, []);
 
   const baseQueryString = useMemo(() => {
     const searchParams = new URLSearchParams();
@@ -57,8 +64,10 @@ export function useCursorFeed({
       const data = await fetchJsonWithCache({
         namespace,
         key: `${baseQueryString}&cursor=${encodeURIComponent(cursor || 'first')}`,
-        url: `${API_URL}/api/content/feed?${searchParams.toString()}`,
-        ttlMs
+        url: `${API_URL}${endpoint}?${searchParams.toString()}`,
+        ttlMs,
+        scope,
+        options: requestOptions
       });
 
       if (requestIdRef.current !== requestId) {
@@ -104,7 +113,7 @@ export function useCursorFeed({
       return undefined;
     }
 
-    const node = loadMoreRef.current;
+    const node = loadMoreNode;
     if (!node) {
       return undefined;
     }
@@ -123,7 +132,7 @@ export function useCursorFeed({
     return () => {
       observer.disconnect();
     };
-  }, [enabled, hasMore, isLoadingMore, loading, nextCursor, rootMargin, baseQueryString]);
+  }, [enabled, hasMore, isLoadingMore, loading, nextCursor, rootMargin, baseQueryString, loadMoreNode, endpoint, requestOptions, scope]);
 
   return {
     items,
@@ -132,6 +141,11 @@ export function useCursorFeed({
     hasMore,
     isLoadingMore,
     loadMoreRef,
-    reload: () => fetchPage({ append: false, cursor: null })
+    reload: () => {
+      setItems([]);
+      setNextCursor(null);
+      setHasMore(true);
+      fetchPage({ append: false, cursor: null });
+    }
   };
 }

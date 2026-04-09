@@ -8,7 +8,8 @@ const FEED_TAB_SLIDE_MS = 220;
 const FEED_TABS = [
   { key: 'home', label: 'For you', to: '/home' },
   { key: 'stories', label: 'Stories', to: '/stories' },
-  { key: 'artworks', label: 'Artwork', to: '/artworks' }
+  { key: 'artworks', label: 'Artwork', to: '/artworks' },
+  { key: 'memberships', label: 'Membership', to: '/memberships' }
 ];
 
 function getAvatarUrl(avatar) {
@@ -44,7 +45,19 @@ export function FeedTabs({ activeTab }) {
   const handleTabClick = (event, tab) => {
     const isModifiedClick = event.metaKey || event.altKey || event.ctrlKey || event.shiftKey;
 
-    if (isModifiedClick || event.button !== 0 || tab.key === activeTab) {
+    if (isModifiedClick || event.button !== 0) {
+      return;
+    }
+
+    if (tab.key === activeTab) {
+      event.preventDefault();
+      navigate(tab.to, {
+        replace: true,
+        state: {
+          feedTab: tab.key,
+          feedRefreshKey: Date.now()
+        }
+      });
       return;
     }
 

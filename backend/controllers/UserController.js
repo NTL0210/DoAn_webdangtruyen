@@ -2,6 +2,11 @@ import User from '../models/User.js';
 import Story from '../models/Story.js';
 import Artwork from '../models/Artwork.js';
 import Follow from '../models/Follow.js';
+import Phone from '../models/Phone.js';
+import ArtistSubscription from '../models/ArtistSubscription.js';
+import { createOtpForUser } from '../services/otpService.js';
+import { sendSms } from '../services/smsService.js';
+import { canAccessPremiumContent } from '../services/subscriptionService.js';
 import { CACHE_NAMESPACES, getOrSetNamespacedCache, invalidateCacheNamespaces } from '../services/cacheStore.js';
 import webSocketManager from '../websocket/WebSocketManager.js';
 import { buildSearchNameFields, escapeRegex, normalizeSearchText, similarityScore, tokenizeSearchText } from '../utils/search.js';
@@ -279,29 +284,80 @@ export async function getProfile(req, res) {
     }
 
     const isOwnProfile = req.user?.userId === id;
-    const contentQuery = isOwnProfile
-      ? { author: id, status: { $ne: 'deleted' } }
-      : { author: id, status: 'approved' };
     const followerMatch = { following: id };
     const followingMatch = { follower: id };
 
-    // Get user's content (exclude deleted content)
-    const [stories, artworks, followerCount, followingCount] = await Promise.all([
-      Story.find(contentQuery).populate('author', 'username avatar').sort({ createdAt: -1 }),
-      Artwork.find(contentQuery).populate('author', 'username avatar').sort({ createdAt: -1 }),
-      countValidFollowRelations(followerMatch, 'follower'),
-      countValidFollowRelations(followingMatch, 'following')
-    ]);
-
     // Check if current user is following this profile (if authenticated)
     let isFollowing = false;
+    let viewerMembership = {
+      isSubscribed: false,
+      expiresAt: null,
+      subscriptionId: null
+    };
+
     if (req.user && req.user.userId) {
       const followRelation = await Follow.findOne({
         follower: req.user.userId,
         following: id
       });
       isFollowing = !!followRelation;
+
+      if (req.user.userId !== id) {
+        const activeSubscription = await ArtistSubscription.findOne({
+          subscriber: req.user.userId,
+          artist: id,
+          status: 'active',
+          expiresAt: { $gt: new Date() }
+        }).select('_id expiresAt');
+
+        if (activeSubscription) {
+          viewerMembership = {
+            isSubscribed: true,
+            expiresAt: activeSubscription.expiresAt,
+            subscriptionId: activeSubscription._id
+          };
+        }
+      }
     }
+
+    const viewerCanAccessPremium = isOwnProfile || await canAccessPremiumContent({
+      viewerUserId: req.user?.userId,
+      viewerRole: req.user?.role,
+      artistId: id
+    });
+
+    const contentQuery = isOwnProfile
+      ? { author: id, status: { $ne: 'deleted' } }
+      : viewerCanAccessPremium
+        ? { author: id, status: 'approved' }
+        : { author: id, status: 'approved', isPremium: { $ne: true } };
+
+    // Get user's content (exclude deleted content)
+    const [stories, artworks, followerCount, followingCount] = await Promise.all([
+      Story.find(contentQuery).populate('author', 'username avatar creatorPlan').sort({ createdAt: -1 }),
+      Artwork.find(contentQuery).populate('author', 'username avatar creatorPlan').sort({ createdAt: -1 }),
+      countValidFollowRelations(followerMatch, 'follower'),
+      countValidFollowRelations(followingMatch, 'following')
+    ]);
+
+    const now = new Date();
+    const membershipOffer = {
+      isAvailable: Boolean(
+        user.creatorPlan === 'premium_artist'
+        && user.premiumStatus === 'active'
+        && user.premiumExpiresAt
+        && new Date(user.premiumExpiresAt) > now
+        && user.subscriptionEnabled === true
+        && typeof user.subscriptionPrice === 'number'
+        && user.subscriptionPrice > 0
+      ),
+      isEnabled: user.subscriptionEnabled === true,
+      price: typeof user.subscriptionPrice === 'number' ? user.subscriptionPrice : 0,
+      durationDays: 30,
+      title: user.membershipTitle || 'Artist Membership',
+      description: user.membershipDescription || '',
+      benefits: Array.isArray(user.membershipBenefits) ? user.membershipBenefits : []
+    };
 
     return res.status(200).json({
       success: true,
@@ -310,7 +366,10 @@ export async function getProfile(req, res) {
         content: [...stories, ...artworks],
         followerCount,
         followingCount,
-        isFollowing
+        isFollowing,
+        membershipOffer,
+        viewerMembership,
+        viewerCanAccessPremium
       }
     });
   } catch (error) {
@@ -329,7 +388,47 @@ export async function getProfile(req, res) {
 export async function updateProfile(req, res) {
   try {
     const updates = {};
-    const { username, email, bio } = req.body;
+    const {
+      username,
+      email,
+      bio,
+      twoFactorEnabled,
+      subscriptionEnabled,
+      subscriptionPrice,
+      membershipTitle,
+      membershipDescription,
+      membershipBenefits
+    } = req.body;
+    const wantsToUpdateMembership = subscriptionEnabled !== undefined || subscriptionPrice !== undefined;
+    const wantsToUpdateMembershipPresentation = membershipTitle !== undefined
+      || membershipDescription !== undefined
+      || membershipBenefits !== undefined;
+
+    let currentUser = null;
+
+    if (wantsToUpdateMembership || wantsToUpdateMembershipPresentation) {
+      currentUser = await User.findById(req.user.userId).select('creatorPlan');
+
+      if (!currentUser) {
+        return res.status(404).json({
+          success: false,
+          error: {
+            code: 'NOT_FOUND',
+            message: 'User not found'
+          }
+        });
+      }
+
+      if (currentUser.creatorPlan !== 'premium_artist') {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'FORBIDDEN',
+            message: 'Only premium artists can manage membership settings'
+          }
+        });
+      }
+    }
 
     if (username !== undefined) {
       updates.username = username.trim();
@@ -337,6 +436,12 @@ export async function updateProfile(req, res) {
     }
     if (email !== undefined) updates.email = email.trim().toLowerCase();
     if (bio !== undefined) updates.bio = bio;
+    if (twoFactorEnabled !== undefined) updates.twoFactorEnabled = twoFactorEnabled;
+    if (subscriptionEnabled !== undefined) updates.subscriptionEnabled = subscriptionEnabled;
+    if (subscriptionPrice !== undefined) updates.subscriptionPrice = subscriptionPrice;
+    if (membershipTitle !== undefined) updates.membershipTitle = membershipTitle;
+    if (membershipDescription !== undefined) updates.membershipDescription = membershipDescription;
+    if (membershipBenefits !== undefined) updates.membershipBenefits = membershipBenefits;
 
     if (Object.keys(updates).length === 0) {
       return res.status(400).json({
@@ -392,6 +497,50 @@ export async function updateProfile(req, res) {
         message: 'An unexpected error occurred'
       }
     });
+  }
+}
+
+// Update authenticated user's phone number and send verification OTP via SMS
+export async function updatePhoneNumber(req, res) {
+  try {
+    const { phoneNumber } = req.body;
+
+    if (!phoneNumber || !String(phoneNumber).trim()) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'phoneNumber is required', field: 'phoneNumber' } });
+    }
+
+    const normalized = String(phoneNumber).replace(/[^+\d]/g, '');
+
+    // Check if phone is already used by another account
+    const existing = await User.findOne({ phoneNumber: normalized, _id: { $ne: req.user.userId } });
+    if (existing) {
+      return res.status(409).json({ success: false, error: { code: 'DUPLICATE_ERROR', message: 'Phone number already in use', field: 'phoneNumber' } });
+    }
+
+    // Save phone record
+    try {
+      await Phone.create({ user: req.user.userId, number: phoneNumber, normalized, verified: false });
+    } catch (e) {
+      // ignore duplicate phone history errors
+    }
+
+    const user = await User.findByIdAndUpdate(req.user.userId, { phoneNumber: normalized, phoneVerified: false }, { new: true }).select('-password');
+
+    // Create OTP and send via SMS
+    try {
+      const { code } = await createOtpForUser(req.user.userId, 'verify');
+      const message = `Your verification code is: ${code}. It expires in 15 minutes.`;
+      await sendSms({ to: normalized, body: message });
+    } catch (smsError) {
+      console.error('[user] Failed to send verification SMS:', smsError);
+    }
+
+    await invalidateCreatorCache();
+
+    return res.status(200).json({ success: true, message: 'Phone updated. Verification code sent.' , data: user });
+  } catch (error) {
+    console.error('Update phone error:', error);
+    return res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' } });
   }
 }
 

@@ -1,14 +1,14 @@
-import { Bookmark, Hash, Heart, Search, Users } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { Hash, Search, Star, Users } from 'lucide-react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import HashtagCharts from '../components/HashtagCharts';
+import { ContentCard } from '../components/ContentCard';
 import { EmptyState } from '../components/common/EmptyState';
+import { VirtualizedFeedList } from '../components/feed/VirtualizedFeedList';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
-import { getCurrentUser, getToken, subscribeToCurrentUserChange, updateCurrentUserCollection } from '../services/authService';
-import { invalidateContentMutationCaches } from '../services/appDataInvalidation';
+import { useRightRail } from '../contexts/RightRailContext';
+import { usePagedContentSearch } from '../hooks/usePagedContentSearch';
 import { fetchJsonWithCache, FRONTEND_CACHE_NAMESPACES } from '../services/frontendCache';
-import { getRoutePrefetchProps } from '../services/routePrefetch';
-import { formatCount } from '../utils/helpers';
 import { formatTag, normalizeTag, normalizeTagList, parseStrictHashtagInput } from '../utils/hashtags';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
@@ -66,6 +66,11 @@ function formatMatchQualityLabel(value) {
 }
 
 export default function SearchPage() {
+  const {
+    favoriteTags,
+    favoriteTagBusy,
+    handleFavoriteToggle
+  } = useRightRail();
   const [searchParams, setSearchParams] = useSearchParams();
   const requestedView = searchParams.get('view');
   const viewMode = ['content', 'creators', 'tags'].includes(requestedView) ? requestedView : 'content';
@@ -74,14 +79,12 @@ export default function SearchPage() {
 
   const [query, setQuery] = useState('');
   const [tags, setTags] = useState('');
-  const [results, setResults] = useState([]);
-  const [authUser, setAuthUser] = useState(() => getCurrentUser());
-  const [pendingInteractionKey, setPendingInteractionKey] = useState('');
-  const [contentLoading, setContentLoading] = useState(false);
   const [searched, setSearched] = useState(false);
-  const [contentError, setContentError] = useState('');
-  const [page, setPage] = useState(1);
-  const [hasMore, setHasMore] = useState(false);
+  const [contentFormError, setContentFormError] = useState('');
+  const [submittedContentSearch, setSubmittedContentSearch] = useState({
+    query: '',
+    tags: []
+  });
 
   const [creatorQuery, setCreatorQuery] = useState(initialCreatorQuery);
   const [creatorResults, setCreatorResults] = useState([]);
@@ -114,8 +117,23 @@ export default function SearchPage() {
     hasPreviousPage: false,
     hasNextPage: false
   });
-  const likedIds = Array.isArray(authUser?.likes) ? authUser.likes.map((value) => String(value)) : [];
-  const bookmarkedIds = Array.isArray(authUser?.bookmarks) ? authUser.bookmarks.map((value) => String(value)) : [];
+  const contentSearchParams = useMemo(() => ({
+    q: submittedContentSearch.query || undefined,
+    tags: submittedContentSearch.tags.length > 0 ? submittedContentSearch.tags : undefined
+  }), [submittedContentSearch]);
+  const {
+    items: results,
+    loading: contentLoading,
+    error: contentError,
+    hasMore: contentHasMore,
+    page: contentPage,
+    isLoadingMore,
+    loadMoreRef,
+    reload: reloadContentSearch
+  } = usePagedContentSearch({
+    enabled: viewMode === 'content' && searched,
+    params: contentSearchParams
+  });
 
   async function loadTagDirectory(nextPage = 1, nextQuery = tagQuery) {
     setTagLoading(true);
@@ -216,8 +234,6 @@ export default function SearchPage() {
     }
   }, []);
 
-  useEffect(() => subscribeToCurrentUserChange(setAuthUser), []);
-
   useEffect(() => {
     const incomingTagQuery = normalizeTag(searchParams.get('tag') || '');
     const incomingCreatorQuery = searchParams.get('q') || '';
@@ -233,97 +249,31 @@ export default function SearchPage() {
     }
   }, [searchParams, viewMode]);
 
-  async function runContentSearch(nextPage = 1) {
-    setContentLoading(true);
-    setSearched(true);
-    setContentError('');
-
-    try {
-      const params = new URLSearchParams();
-      if (query) params.append('q', query);
-
-      if (tags) {
-        const parsedTags = parseStrictHashtagInput(tags);
-        if (parsedTags.error) {
-          setContentError(parsedTags.error);
-          setContentLoading(false);
-          return;
-        }
-
-        parsedTags.tags.forEach((tag) => params.append('tags', tag));
-      }
-
-      params.append('page', String(nextPage));
-
-      const data = await fetchJsonWithCache({
-        namespace: FRONTEND_CACHE_NAMESPACES.CONTENT_SEARCH,
-        key: `page=${nextPage}&q=${encodeURIComponent(query)}&tags=${encodeURIComponent(tags)}`,
-        url: `${API_URL}/api/content/search?${params}`,
-        ttlMs: 45 * 1000
-      });
-
-      if (data.success) {
-        setResults(data.data || []);
-        setPage(nextPage);
-        setHasMore((data.data?.length || 0) >= (data.pagination?.limit || 50));
-      } else {
-        setContentError(data.error?.message || 'Search failed');
-      }
-    } catch (error) {
-      console.error('Search error:', error);
-      setContentError('Search failed');
-    } finally {
-      setContentLoading(false);
-    }
-  }
-
-  async function handleContentInteraction(contentId, action) {
-    if (!getToken()) {
-      alert('Please login to like or bookmark posts.');
-      return;
-    }
-
-    const interactionKey = `${action}:${contentId}`;
-    if (pendingInteractionKey) {
-      return;
-    }
-
-    const likeIds = Array.isArray(authUser?.likes) ? authUser.likes.map((value) => String(value)) : [];
-    const bookmarkIds = Array.isArray(authUser?.bookmarks) ? authUser.bookmarks.map((value) => String(value)) : [];
-    const nextActive = action === 'like'
-      ? !likeIds.includes(String(contentId))
-      : !bookmarkIds.includes(String(contentId));
-
-    setPendingInteractionKey(interactionKey);
-
-    try {
-      const response = await fetch(`${API_URL}/api/content/${contentId}/${action}`, {
-        method: 'POST',
-        headers: {
-          Authorization: `Bearer ${getToken()}`
-        }
-      });
-
-      const data = await response.json();
-
-      if (!data.success) {
-        alert(data.error?.message || `Failed to update ${action}`);
-        return;
-      }
-
-      setResults((prev) => prev.map((item) => (String(item._id) === String(contentId) ? data.data : item)));
-      invalidateContentMutationCaches();
-      updateCurrentUserCollection(action === 'like' ? 'likes' : 'bookmarks', contentId, nextActive);
-    } catch (error) {
-      alert(`Failed to update ${action}`);
-    } finally {
-      setPendingInteractionKey('');
-    }
-  }
-
   const handleContentSearch = async (event) => {
     event.preventDefault();
-    await runContentSearch(1);
+
+    const parsedTags = parseStrictHashtagInput(tags);
+
+    if (parsedTags.error) {
+      setContentFormError(parsedTags.error);
+      return;
+    }
+
+    setContentFormError('');
+    setSearched(true);
+
+    const nextSearch = {
+      query: query.trim(),
+      tags: parsedTags.tags || []
+    };
+    const isSameSearch = submittedContentSearch.query === nextSearch.query
+      && submittedContentSearch.tags.join('|') === nextSearch.tags.join('|');
+
+    setSubmittedContentSearch(nextSearch);
+
+    if (isSameSearch) {
+      reloadContentSearch();
+    }
   };
 
   const handleCreatorSearch = async (event) => {
@@ -375,7 +325,9 @@ export default function SearchPage() {
       ? {
           label: 'Content search',
           description: 'Find stories and artworks by title, description, or hashtags.',
-          metric: searched ? `${results.length} results on page ${page}` : 'Ready for a new lookup'
+          metric: searched
+            ? `${results.length} results loaded${contentHasMore ? ' · scroll to load more' : ''}`
+            : 'Ready for a new lookup'
         }
       : viewMode === 'creators'
         ? {
@@ -392,6 +344,7 @@ export default function SearchPage() {
           };
   const currentTagPostVolume = tagDirectory.reduce((total, tag) => total + (tag.contentCount || 0), 0);
   const currentTagCreatorReach = tagDirectory.reduce((total, tag) => total + (tag.creatorCount || 0), 0);
+  const totalTagsInDirectory = tagSummary?.totalTags || 0;
   const strongestTag = tagDirectory.reduce((best, tag) => {
     if (!best || (tag.contentCount || 0) > (best.contentCount || 0)) {
       return tag;
@@ -413,6 +366,8 @@ export default function SearchPage() {
     [topTagsByPosts]
   );
   const activeViewIndex = Math.max(SEARCH_VIEW_ITEMS.findIndex((item) => item.value === viewMode), 0);
+  const submittedQueryLabel = submittedContentSearch.query;
+  const submittedTagLabel = submittedContentSearch.tags.map((tag) => formatTag(tag)).join(', ');
 
   return (
     <div className="space-y-6">
@@ -494,9 +449,9 @@ export default function SearchPage() {
             </form>
           </section>
 
-          {contentError ? (
+          {contentFormError || contentError ? (
             <div className="rounded-2xl border border-rose-500/30 bg-rose-500/10 px-4 py-3 text-sm text-rose-300">
-              {contentError}
+              {contentFormError || contentError}
             </div>
           ) : null}
 
@@ -508,89 +463,28 @@ export default function SearchPage() {
             results.length ? (
               <div className="space-y-6">
                 <div className="detail-card flex flex-wrap items-center justify-between gap-3 p-4">
-                  <p className="text-sm text-slate-400">Found {results.length} results on page {page}.</p>
-                  {(query || tags) && (
-                    <p className="text-sm text-slate-500">{query ? `Keyword: ${query}` : 'Browsing by tags'}{query && tags ? ' · ' : ''}{tags ? `Tags: ${tags}` : ''}</p>
+                  <p className="text-sm text-slate-400">
+                    Loaded {results.length} results{contentPage > 1 ? ` across ${contentPage} pages` : ''}.
+                    {contentHasMore ? ' Keep scrolling to load more.' : ' End of current search results.'}
+                  </p>
+                  {(submittedQueryLabel || submittedTagLabel) && (
+                    <p className="text-sm text-slate-500">
+                      {submittedQueryLabel ? `Keyword: ${submittedQueryLabel}` : 'Browsing by tags'}
+                      {submittedQueryLabel && submittedTagLabel ? ' · ' : ''}
+                      {submittedTagLabel ? `Tags: ${submittedTagLabel}` : ''}
+                    </p>
                   )}
                 </div>
-                <div className="grid gap-4 lg:grid-cols-2 xl:grid-cols-3">
-                  {results.map((item) => (
-                    <article
-                      key={item._id}
-                      className="detail-card p-4"
-                      {...getRoutePrefetchProps(item.content !== undefined ? `/story/${item._id}` : `/artwork/${item._id}`)}
-                    >
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">{item.content !== undefined ? 'Story' : 'Artwork'}</p>
-                          <h3 className="mt-2 text-lg font-semibold text-white sm:text-xl">{item.title}</h3>
-                        </div>
-                        <span className="rounded-full border border-slate-700 px-3 py-1 text-xs text-slate-300">{item.views || 0} views</span>
-                      </div>
-
-                      <p className="mt-3 line-clamp-3 text-sm leading-6 text-slate-400">{item.description || 'No description available.'}</p>
-
-                      <div className="mt-4 flex flex-wrap gap-2">
-                        {normalizeTagList(item.tags || []).slice(0, 4).map((tag) => (
-                          <span key={tag} className="rounded-full border border-brand-light/25 bg-brand-light/10 px-3 py-1 text-xs text-brand-light">
-                            {formatTag(tag)}
-                          </span>
-                        ))}
-                      </div>
-
-                      <div className="mt-5 flex flex-wrap items-center gap-3 text-sm">
-                        <button
-                          type="button"
-                          onClick={() => handleContentInteraction(item._id, 'like')}
-                          disabled={pendingInteractionKey === `like:${item._id}`}
-                          className={`interaction-pill ${likedIds.includes(String(item._id)) ? 'interaction-pill-like-active' : ''}`}
-                        >
-                          <Heart size={15} fill={likedIds.includes(String(item._id)) ? 'currentColor' : 'none'} />
-                          {formatCount(item.likes || 0)}
-                        </button>
-                        <button
-                          type="button"
-                          onClick={() => handleContentInteraction(item._id, 'bookmark')}
-                          disabled={pendingInteractionKey === `bookmark:${item._id}`}
-                          className={`interaction-pill ${bookmarkedIds.includes(String(item._id)) ? 'interaction-pill-bookmark-active' : ''}`}
-                        >
-                          <Bookmark size={15} fill={bookmarkedIds.includes(String(item._id)) ? 'currentColor' : 'none'} />
-                          {formatCount(item.bookmarks || 0)}
-                        </button>
-                      </div>
-
-                      <div className="mt-5 flex items-center justify-between gap-3 text-sm text-slate-400">
-                        <span>@{item.author?.username || 'unknown'}</span>
-                        <Link
-                          to={item.content !== undefined ? `/story/${item._id}` : `/artwork/${item._id}`}
-                          {...getRoutePrefetchProps(item.content !== undefined ? `/story/${item._id}` : `/artwork/${item._id}`)}
-                          className="text-brand-light transition hover:text-white"
-                        >
-                          Open →
-                        </Link>
-                      </div>
-                    </article>
-                  ))}
-                </div>
-
-                <div className="flex items-center justify-center gap-4">
-                  <button
-                    type="button"
-                    disabled={contentLoading || page === 1}
-                    onClick={() => runContentSearch(Math.max(1, page - 1))}
-                    className="detail-inline-button px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Previous
-                  </button>
-                  <span className="text-sm text-slate-400">Page {page}</span>
-                  <button
-                    type="button"
-                    disabled={contentLoading || !hasMore}
-                    onClick={() => runContentSearch(page + 1)}
-                    className="detail-inline-button px-4 py-2 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-                  >
-                    Next
-                  </button>
+                <div className="detail-card overflow-hidden p-0">
+                  <VirtualizedFeedList
+                    items={results}
+                    renderItem={(item) => <ContentCard item={item} />}
+                    estimateSize={560}
+                    hasMore={contentHasMore}
+                    isLoadingMore={isLoadingMore}
+                    loadMoreRef={loadMoreRef}
+                    loadingMoreLabel="Loading more search results..."
+                  />
                 </div>
               </div>
             ) : (
@@ -758,7 +652,7 @@ export default function SearchPage() {
           ) : tagDirectory.length ? (
             <div className="space-y-6">
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <TagStatCard label="Tags on this page" value={tagDirectory.length} hint="Current slice of the hashtag directory." />
+                <TagStatCard label="Tags in directory" value={totalTagsInDirectory} hint="Total hashtags across all approved content." />
                 <TagStatCard label="Post volume" value={currentTagPostVolume} hint="Approved posts covered by the visible tags." />
                 <TagStatCard label="Creator reach" value={currentTagCreatorReach} hint="Combined creator usage across visible tags." />
                 <TagStatCard
@@ -818,7 +712,24 @@ export default function SearchPage() {
                         <p className="text-xs uppercase tracking-[0.18em] text-slate-500 md:hidden">Last used</p>
                         <p className="text-sm text-slate-300">{new Date(tag.latestUsedAt).toLocaleString()}</p>
                       </div>
-                      <div className="flex md:justify-end">
+                      <div className="flex flex-wrap gap-2 md:justify-end">
+                        <button
+                          type="button"
+                          disabled={favoriteTagBusy === normalizeTag(tag.name)}
+                          onClick={async () => {
+                            const normalizedTag = normalizeTag(tag.name);
+                            const result = await handleFavoriteToggle(normalizedTag, favoriteTags.includes(normalizedTag));
+
+                            if (!result.success) {
+                              alert(result.error?.message || 'Failed to update favorite hashtag');
+                            }
+                          }}
+                          className={`detail-inline-button inline-flex items-center gap-2 px-4 py-2 text-sm ${favoriteTags.includes(normalizeTag(tag.name)) ? 'border-amber-400/40 bg-amber-400/10 text-amber-200 hover:border-amber-300/60 hover:text-amber-100' : ''}`}
+                          aria-label={favoriteTags.includes(normalizeTag(tag.name)) ? `Remove ${formatTag(tag.name)} from favorites` : `Save ${formatTag(tag.name)} to favorites`}
+                        >
+                          <Star size={15} fill={favoriteTags.includes(normalizeTag(tag.name)) ? 'currentColor' : 'none'} />
+                          <span>{favoriteTags.includes(normalizeTag(tag.name)) ? 'Saved' : 'Favorite'}</span>
+                        </button>
                         <Link to={`/home?tag=${encodeURIComponent(tag.name)}`} className="detail-inline-button px-4 py-2 text-sm">
                           Open feed
                         </Link>

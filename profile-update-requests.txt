@@ -1,0 +1,2 @@
+[PUT] http://localhost:5000/api/users/profile => [200] OK
+  Request body: {"username":"flowcheck0601c","email":"flowcheck0601@example.com","bio":""}

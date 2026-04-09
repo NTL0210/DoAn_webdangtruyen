@@ -1,6 +1,6 @@
 import { Bookmark, Heart } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
-import { Button } from '../components/common/Button';
+import { AnimatePresence, motion } from 'framer-motion';
 import { EmptyState } from '../components/common/EmptyState';
 import { LoadingSpinner } from '../components/common/LoadingSpinner';
 import { ContentCard } from '../components/ContentCard';
@@ -41,6 +41,7 @@ function createCollectionState() {
 export default function SavedPage() {
   const [currentUser, setCurrentUser] = useState(() => getCurrentUser());
   const [activeTab, setActiveTab] = useState('bookmarked');
+  const [transitionDirection, setTransitionDirection] = useState(1);
   const [collections, setCollections] = useState({
     bookmarked: createCollectionState(),
     liked: createCollectionState()
@@ -169,10 +170,21 @@ export default function SavedPage() {
     }
   ]), [bookmarkedCount, likedCount]);
 
+  const handleTabChange = (nextTab) => {
+    if (nextTab === activeTab) {
+      return;
+    }
+
+    const currentIndex = statCards.findIndex((card) => card.key === activeTab);
+    const nextIndex = statCards.findIndex((card) => card.key === nextTab);
+    setTransitionDirection(nextIndex > currentIndex ? 1 : -1);
+    setActiveTab(nextTab);
+  };
+
   return (
     <div className="detail-shell">
       <section className="detail-hero">
-        <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
+        <div className="flex flex-col gap-4">
           <div className="max-w-3xl">
             <p className="detail-eyebrow">Saved library</p>
             <h2 className="detail-title mt-2">Liked and bookmarked posts</h2>
@@ -180,39 +192,27 @@ export default function SavedPage() {
               Keep every saved story and artwork in one place, with lazy loading for bigger libraries.
             </p>
           </div>
-
-          <div className="flex flex-wrap gap-3">
-            <Button
-              type="button"
-              variant={activeTab === 'bookmarked' ? 'primary' : 'secondary'}
-              className="inline-flex items-center gap-2 px-4 py-2 text-xs uppercase"
-              onClick={() => setActiveTab('bookmarked')}
-            >
-              Bookmarked
-              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${activeTab === 'bookmarked' ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-300'}`}>
-                {bookmarkedCount}
-              </span>
-            </Button>
-            <Button
-              type="button"
-              variant={activeTab === 'liked' ? 'primary' : 'secondary'}
-              className="inline-flex items-center gap-2 px-4 py-2 text-xs uppercase"
-              onClick={() => setActiveTab('liked')}
-            >
-              Liked
-              <span className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${activeTab === 'liked' ? 'bg-white/20 text-white' : 'bg-slate-800 text-slate-300'}`}>
-                {likedCount}
-              </span>
-            </Button>
-          </div>
         </div>
 
         <div className="mt-5 grid gap-3 md:grid-cols-2 xl:max-w-3xl">
           {statCards.map((card) => {
             const Icon = card.icon;
             return (
-              <div key={card.key} className={`detail-subcard transition ${activeTab === card.key ? 'border-brand/35 bg-brand/10' : ''}`}>
-                <div className="flex items-start justify-between gap-3">
+              <motion.button
+                key={card.key}
+                type="button"
+                onClick={() => handleTabChange(card.key)}
+                whileTap={{ scale: 0.985 }}
+                className={`detail-subcard relative w-full overflow-hidden text-left transition hover:-translate-y-0.5 hover:border-slate-500 ${activeTab === card.key ? 'border-brand/35 shadow-[0_18px_40px_rgba(91,33,182,0.12)]' : ''}`}
+              >
+                {activeTab === card.key ? (
+                  <motion.div
+                    layoutId="saved-active-card"
+                    transition={{ type: 'spring', stiffness: 360, damping: 32 }}
+                    className="absolute inset-0 rounded-[inherit] border border-brand/35 bg-brand/10"
+                  />
+                ) : null}
+                <div className="relative z-10 flex items-start justify-between gap-3">
                   <div>
                     <p className="text-xs uppercase tracking-[0.24em] text-slate-500">{card.label}</p>
                     <p className="mt-3 text-3xl font-semibold tracking-tight text-white">{card.value}</p>
@@ -222,7 +222,7 @@ export default function SavedPage() {
                     <Icon size={18} />
                   </div>
                 </div>
-              </div>
+              </motion.button>
             );
           })}
         </div>
@@ -234,50 +234,62 @@ export default function SavedPage() {
         </div>
       ) : null}
 
-      {activeCollection.loading && !activeCollection.items.length ? (
-        <div className="panel flex min-h-72 items-center justify-center">
-          <LoadingSpinner label={`Loading ${activeTab} posts...`} />
-        </div>
-      ) : activeCollection.items.length ? (
-        <div className="space-y-6">
-          <div className="detail-card flex flex-wrap items-center justify-between gap-3 p-4">
-            <p className="text-sm text-slate-400">
-              Showing {activeCollection.items.length} of {activeCollection.pagination.totalItems} {activeTab} posts.
-            </p>
-            <span className="rounded-full border border-slate-700 bg-slate-950/50 px-3 py-1.5 text-sm text-slate-300">
-              Page {activeCollection.pagination.page} of {activeCollection.pagination.totalPages}
-            </span>
-          </div>
-
-          <div className="grid gap-5 lg:grid-cols-2">
-            {activeCollection.items.map((item) => (
-              <ContentCard
-                key={`${activeTab}-${item._id}`}
-                item={item}
-                onInteractionComplete={handleInteractionComplete}
-              />
-            ))}
-          </div>
-
-          {activeCollection.pagination.hasNextPage ? (
-            <div className="flex justify-center">
-              <button
-                type="button"
-                disabled={activeCollection.loading}
-                onClick={() => loadCollection(activeTab, activeCollection.pagination.page + 1, true)}
-                className="detail-inline-button px-5 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {activeCollection.loading ? 'Loading more...' : 'Load More'}
-              </button>
+      <AnimatePresence mode="wait" initial={false} custom={transitionDirection}>
+        <motion.div
+          key={activeTab}
+          custom={transitionDirection}
+          initial={{ opacity: 0, x: 28 * transitionDirection }}
+          animate={{ opacity: 1, x: 0 }}
+          exit={{ opacity: 0, x: -22 * transitionDirection }}
+          transition={{ duration: 0.24, ease: 'easeOut' }}
+        >
+          {activeCollection.loading && !activeCollection.items.length ? (
+            <div className="panel flex min-h-72 items-center justify-center">
+              <LoadingSpinner label={`Loading ${activeTab} posts...`} />
             </div>
-          ) : null}
-        </div>
-      ) : (
-        <EmptyState
-          title={EMPTY_STATE[activeTab].title}
-          description={EMPTY_STATE[activeTab].description}
-        />
-      )}
+          ) : activeCollection.items.length ? (
+            <div className="space-y-6">
+              <div className="detail-card flex flex-wrap items-center justify-between gap-3 p-4">
+                <p className="text-sm text-slate-400">
+                  Showing {activeCollection.items.length} of {activeCollection.pagination.totalItems} {activeTab} posts.
+                </p>
+                <span className="rounded-full border border-slate-700 bg-slate-950/50 px-3 py-1.5 text-sm text-slate-300">
+                  Page {activeCollection.pagination.page} of {activeCollection.pagination.totalPages}
+                </span>
+              </div>
+
+              <div className="space-y-4">
+                {activeCollection.items.map((item) => (
+                  <div key={`${activeTab}-${item._id}`} className="saved-library-card">
+                    <ContentCard
+                      item={item}
+                      onInteractionComplete={handleInteractionComplete}
+                    />
+                  </div>
+                ))}
+              </div>
+
+              {activeCollection.pagination.hasNextPage ? (
+                <div className="flex justify-center">
+                  <button
+                    type="button"
+                    disabled={activeCollection.loading}
+                    onClick={() => loadCollection(activeTab, activeCollection.pagination.page + 1, true)}
+                    className="detail-inline-button px-5 py-3 text-sm disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {activeCollection.loading ? 'Loading more...' : 'Load More'}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          ) : (
+            <EmptyState
+              title={EMPTY_STATE[activeTab].title}
+              description={EMPTY_STATE[activeTab].description}
+            />
+          )}
+        </motion.div>
+      </AnimatePresence>
     </div>
   );
 }

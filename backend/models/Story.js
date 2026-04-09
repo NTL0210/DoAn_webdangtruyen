@@ -47,6 +47,10 @@ const storySchema = new mongoose.Schema({
     enum: ['draft', 'pending', 'approved', 'rejected', 'deleted'],
     default: 'pending'
   },
+  isPremium: {
+    type: Boolean,
+    default: false
+  },
   likes: {
     type: Number,
     default: 0

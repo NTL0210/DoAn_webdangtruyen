@@ -1,22 +1,75 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Meteors } from '../components/Meteors';
 import { APP_NAME, APP_SLOGAN } from '../constants/app';
-import { login, submitAccountAppeal } from '../services/authService';
+import { login, resendLoginOtp, submitAccountAppeal, verifyLoginOtp } from '../services/authService';
+import { isCompleteOtpCode, sanitizeOtpCode } from '../utils/otp';
 
 function formatDateTime(value) {
   if (!value) return 'Unknown time';
   return new Date(value).toLocaleString();
 }
 
+function formatRemainingTime(milliseconds) {
+  if (!Number.isFinite(milliseconds) || milliseconds <= 0) {
+    return 'Appeal window expired';
+  }
+
+  const totalMinutes = Math.ceil(milliseconds / (60 * 1000));
+  const days = Math.floor(totalMinutes / (24 * 60));
+  const hours = Math.floor((totalMinutes % (24 * 60)) / 60);
+  const minutes = totalMinutes % 60;
+  const parts = [];
+
+  if (days > 0) parts.push(`${days}d`);
+  if (hours > 0) parts.push(`${hours}h`);
+  if (minutes > 0 && parts.length < 2) parts.push(`${minutes}m`);
+
+  return parts.join(' ') || 'Less than 1 minute';
+}
+
 export default function LoginPage() {
+  const OTP_RESEND_COOLDOWN_SECONDS = 60;
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [banDialog, setBanDialog] = useState(null);
   const [appealDialog, setAppealDialog] = useState({ open: false, reason: '', evidence: '', loading: false, error: '', success: '' });
+  const [twoFactorDialog, setTwoFactorDialog] = useState({
+    open: false,
+    loginToken: '',
+    maskedEmail: '',
+    code: '',
+    loading: false,
+    resendLoading: false,
+    error: '',
+    info: ''
+  });
+  const [otpResendCooldown, setOtpResendCooldown] = useState(0);
   const navigate = useNavigate();
+  const twoFactorCodeInlineError = twoFactorDialog.code && !isCompleteOtpCode(twoFactorDialog.code)
+    ? 'OTP must contain exactly 6 digits.'
+    : '';
+
+  useEffect(() => {
+    if (!twoFactorDialog.open || otpResendCooldown <= 0) {
+      return undefined;
+    }
+
+    const timerId = window.setInterval(() => {
+      setOtpResendCooldown((previous) => {
+        if (previous <= 1) {
+          window.clearInterval(timerId);
+          return 0;
+        }
+
+        return previous - 1;
+      });
+    }, 1000);
+
+    return () => window.clearInterval(timerId);
+  }, [otpResendCooldown, twoFactorDialog.open]);
 
   const handleSubmit = async (e) => {
     e.preventDefault();
@@ -26,12 +79,24 @@ export default function LoginPage() {
     try {
       const result = await login(email, password);
 
-      if (result.success) {
+      if (result.success && result.data?.requiresTwoFactor) {
+        setTwoFactorDialog({
+          open: true,
+          loginToken: result.data.loginToken || '',
+          maskedEmail: result.data.maskedEmail || '',
+          code: '',
+          loading: false,
+          resendLoading: false,
+          error: '',
+          info: `A one-time login code was sent to ${result.data.maskedEmail || 'your email'}.`
+        });
+        setOtpResendCooldown(OTP_RESEND_COOLDOWN_SECONDS);
+      } else if (result.success) {
         navigate('/home'); // Changed from '/' to '/home'
       } else if (result.error?.code === 'ACCOUNT_BANNED_PERMANENT') {
         setBanDialog(result.data);
       } else {
-        setError(result.error.message);
+        setError(result.error?.message || 'Unable to sign in');
       }
     } catch (err) {
       setError('An unexpected error occurred');
@@ -43,6 +108,109 @@ export default function LoginPage() {
   const closeBanDialog = () => {
     setBanDialog(null);
     setAppealDialog({ open: false, reason: '', evidence: '', loading: false, error: '', success: '' });
+  };
+
+  const closeTwoFactorDialog = () => {
+    if (twoFactorDialog.loading || twoFactorDialog.resendLoading) {
+      return;
+    }
+
+    setTwoFactorDialog({
+      open: false,
+      loginToken: '',
+      maskedEmail: '',
+      code: '',
+      loading: false,
+      resendLoading: false,
+      error: '',
+      info: ''
+    });
+    setOtpResendCooldown(0);
+  };
+
+  const handleVerifyTwoFactor = async (event) => {
+    event.preventDefault();
+
+    if (!twoFactorDialog.code.trim()) {
+      setTwoFactorDialog((prev) => ({
+        ...prev,
+        error: 'Enter the OTP code sent to your email.'
+      }));
+      return;
+    }
+
+    if (!isCompleteOtpCode(twoFactorDialog.code)) {
+      setTwoFactorDialog((prev) => ({
+        ...prev,
+        error: ''
+      }));
+      return;
+    }
+
+    try {
+      setTwoFactorDialog((prev) => ({
+        ...prev,
+        loading: true,
+        error: '',
+        info: ''
+      }));
+
+      const result = await verifyLoginOtp(twoFactorDialog.loginToken, twoFactorDialog.code.trim());
+
+      if (!result.success) {
+        setTwoFactorDialog((prev) => ({
+          ...prev,
+          loading: false,
+          error: result.error?.message || 'Failed to verify the login code.'
+        }));
+        return;
+      }
+
+      closeTwoFactorDialog();
+      navigate('/home');
+    } catch (verifyError) {
+      setTwoFactorDialog((prev) => ({
+        ...prev,
+        loading: false,
+        error: 'Failed to verify the login code.'
+      }));
+    }
+  };
+
+  const handleResendTwoFactor = async () => {
+    try {
+      setTwoFactorDialog((prev) => ({
+        ...prev,
+        resendLoading: true,
+        error: '',
+        info: ''
+      }));
+
+      const result = await resendLoginOtp(twoFactorDialog.loginToken);
+
+      if (!result.success) {
+        setTwoFactorDialog((prev) => ({
+          ...prev,
+          resendLoading: false,
+          error: result.error?.message || 'Failed to resend the login code.'
+        }));
+        return;
+      }
+
+      setTwoFactorDialog((prev) => ({
+        ...prev,
+        resendLoading: false,
+        maskedEmail: result.data?.maskedEmail || prev.maskedEmail,
+        info: `A new one-time login code was sent to ${result.data?.maskedEmail || prev.maskedEmail || 'your email'}.`
+      }));
+      setOtpResendCooldown(OTP_RESEND_COOLDOWN_SECONDS);
+    } catch (resendError) {
+      setTwoFactorDialog((prev) => ({
+        ...prev,
+        resendLoading: false,
+        error: 'Failed to resend the login code.'
+      }));
+    }
   };
 
   const openAppealDialog = () => {
@@ -99,6 +267,7 @@ export default function LoginPage() {
 
   const latestAppeal = banDialog?.latestAppeal;
   const hasPendingAppeal = latestAppeal?.status === 'pending';
+  const canSubmitAppeal = Boolean(banDialog?.canSubmitAppeal) && !hasPendingAppeal;
 
   return (
     <div className="auth-screen">
@@ -167,6 +336,11 @@ export default function LoginPage() {
                   className="auth-input"
                   placeholder="Enter your password"
                 />
+                <div className="mt-2 text-right">
+                  <Link to="/forgot-password" className="text-xs text-slate-400 transition hover:text-slate-300">
+                    Forgot password?
+                  </Link>
+                </div>
               </div>
             </div>
 
@@ -198,6 +372,12 @@ export default function LoginPage() {
                 <p className="mt-2 text-sm text-slate-400 light:text-slate-500">
                   Banned at: {formatDateTime(banDialog.permanentlyBannedAt)}
                 </p>
+                <p className="mt-2 text-sm text-amber-300 light:text-amber-600">
+                  Account and related data will be permanently deleted on {formatDateTime(banDialog.permanentDeletionScheduledFor)}.
+                </p>
+                <p className="mt-2 text-sm text-slate-300 light:text-slate-700">
+                  Time remaining to appeal: {formatRemainingTime(banDialog.permanentDeletionMillisecondsRemaining)}
+                </p>
               </div>
             </div>
 
@@ -222,11 +402,11 @@ export default function LoginPage() {
               </button>
               <button
                 type="button"
-                disabled={hasPendingAppeal}
+                disabled={!canSubmitAppeal}
                 onClick={openAppealDialog}
                 className="rounded-2xl bg-brand px-5 py-2 text-sm font-medium text-white transition hover:bg-brand-light disabled:cursor-not-allowed disabled:opacity-60"
               >
-                {hasPendingAppeal ? 'Appeal Pending' : 'Appeal to Admin'}
+                {hasPendingAppeal ? 'Appeal Pending' : canSubmitAppeal ? 'Appeal to Admin' : 'Appeal Window Closed'}
               </button>
             </div>
           </div>
@@ -301,6 +481,97 @@ export default function LoginPage() {
                   className="rounded-2xl bg-brand px-5 py-2 text-sm font-medium text-white transition hover:bg-brand-light disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {appealDialog.loading ? 'Submitting...' : 'Send Appeal'}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      ) : null}
+
+      {twoFactorDialog.open ? (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center bg-slate-950/75 px-4 backdrop-blur-sm">
+          <div className="w-full max-w-lg rounded-[28px] border border-cyan-500/20 bg-slate-900/95 p-6 text-slate-100 shadow-2xl">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <p className="text-xs uppercase tracking-[0.2em] text-cyan-300">Two-step verification</p>
+                <h3 className="mt-2 text-2xl font-semibold text-white">Confirm this sign-in</h3>
+                <p className="mt-3 text-sm leading-6 text-slate-300">
+                  For this login, a one-time OTP has been sent to <span className="font-semibold text-cyan-200">{twoFactorDialog.maskedEmail || 'your email'}</span>. Enter the code to finish signing in.
+                </p>
+              </div>
+              <button
+                type="button"
+                onClick={closeTwoFactorDialog}
+                className="rounded-2xl border border-slate-700 px-3 py-2 text-xs text-slate-300 transition hover:border-slate-500 hover:text-white"
+              >
+                Close
+              </button>
+            </div>
+
+            <form onSubmit={handleVerifyTwoFactor} className="mt-6 space-y-4">
+              <div>
+                <label htmlFor="login-otp" className="mb-2 block text-sm font-medium text-slate-300">
+                  OTP code
+                </label>
+                <input
+                  id="login-otp"
+                  type="text"
+                  inputMode="numeric"
+                  autoComplete="one-time-code"
+                  maxLength={6}
+                  value={twoFactorDialog.code}
+                  onChange={(event) => setTwoFactorDialog((prev) => ({
+                    ...prev,
+                    code: sanitizeOtpCode(event.target.value)
+                  }))}
+                  className="auth-input tracking-[0.35em]"
+                  placeholder="000000"
+                />
+                <p className="mt-2 text-xs text-slate-400">
+                  We only show the last 3 characters before the domain to keep your email protected.
+                </p>
+                {twoFactorCodeInlineError ? (
+                  <p className="mt-2 text-xs text-rose-300">
+                    {twoFactorCodeInlineError}
+                  </p>
+                ) : null}
+                {otpResendCooldown > 0 ? (
+                  <p className="mt-2 text-xs text-amber-300">
+                    You can request a new OTP in {otpResendCooldown}s.
+                  </p>
+                ) : null}
+              </div>
+
+              {twoFactorDialog.error ? (
+                <div className="rounded-2xl border border-red-500/30 bg-red-500/10 px-4 py-3 text-sm text-red-300">
+                  {twoFactorDialog.error}
+                </div>
+              ) : null}
+              {twoFactorDialog.info ? (
+                <div className="rounded-2xl border border-cyan-500/30 bg-cyan-500/10 px-4 py-3 text-sm text-cyan-200">
+                  {twoFactorDialog.info}
+                </div>
+              ) : null}
+
+              <div className="flex flex-wrap justify-between gap-3">
+                <button
+                  type="button"
+                  onClick={handleResendTwoFactor}
+                  disabled={twoFactorDialog.loading || twoFactorDialog.resendLoading || otpResendCooldown > 0}
+                  className="rounded-2xl border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:border-slate-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {twoFactorDialog.resendLoading
+                    ? 'Sending...'
+                    : otpResendCooldown > 0
+                      ? `Resend in ${otpResendCooldown}s`
+                      : 'Resend OTP'}
+                </button>
+                <button
+                  type="submit"
+                  disabled={twoFactorDialog.loading}
+                  className="rounded-2xl bg-cyan-500 px-5 py-2 text-sm font-medium text-slate-950 transition hover:bg-cyan-400 disabled:cursor-not-allowed disabled:opacity-60"
+                >
+                  {twoFactorDialog.loading ? 'Verifying...' : 'Verify and Sign In'}
                 </button>
               </div>
             </form>

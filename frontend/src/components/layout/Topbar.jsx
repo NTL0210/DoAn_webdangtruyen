@@ -18,6 +18,7 @@ const titles = {
   '/create-artwork': 'Create Artwork',
   '/stories': 'Stories',
   '/artworks': 'Artworks',
+  '/memberships': 'Membership Feed',
   '/search': 'Search',
   '/notifications': 'Notifications',
   '/admin': 'Admin Review',
@@ -75,6 +76,8 @@ export function Topbar() {
     ? (location.pathname.endsWith('/edit') ? 'Edit Story' : 'Story Detail')
     : location.pathname.startsWith('/artwork/')
       ? (location.pathname.endsWith('/edit') ? 'Edit Artwork' : 'Artwork Detail')
+      : location.pathname.startsWith('/membership/')
+        ? 'Artist Membership'
       : titles[location.pathname] || 'The Index';
 
   return (

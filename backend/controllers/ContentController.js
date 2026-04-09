@@ -8,6 +8,7 @@ import User from '../models/User.js';
 import { buildTagSearchConditions, normalizeTagsForQuery, parseTagsInput } from '../utils/hashtags.js';
 import { escapeRegex, normalizeSearchText, tokenizeSearchText } from '../utils/search.js';
 import { CACHE_NAMESPACES, getOrSetNamespacedCache, invalidateCacheNamespaces } from '../services/cacheStore.js';
+import { canAccessPremiumContent, canPublishSubscriberOnlyContent } from '../services/subscriptionService.js';
 import { removeContentFromAllSavedCollections } from '../utils/savedContent.js';
 import webSocketManager from '../websocket/WebSocketManager.js';
 
@@ -179,8 +180,15 @@ function buildFeedSearchCondition(rawQuery) {
   return { $or: clauses };
 }
 
-function buildFeedBaseQuery({ rawQuery, tag }) {
+function buildFeedBaseQuery({ rawQuery, tag, premiumMode = 'exclude' }) {
   let query = { status: 'approved' };
+
+  if (premiumMode === 'only') {
+    query.isPremium = true;
+  } else if (premiumMode === 'exclude') {
+    query.isPremium = { $ne: true };
+  }
+
   const searchCondition = buildFeedSearchCondition(rawQuery);
   const tagCondition = buildTagSearchConditions(tag)[0] || null;
 
@@ -281,6 +289,21 @@ async function fetchNewestFeedItemsForModel(Model, baseQuery, cursor, limit) {
     .lean();
 }
 
+function buildPremiumFeedAuthorProjection() {
+  return 'username avatar subscriptionEnabled subscriptionPrice membershipTitle membershipDescription membershipBenefits';
+}
+
+async function fetchNewestPremiumFeedItemsForModel(Model, baseQuery, cursor, limit) {
+  const cursorCondition = buildNewestCursorCondition(cursor);
+  const query = combineMongoQuery(baseQuery, cursorCondition);
+
+  return Model.find(query)
+    .sort({ createdAt: -1, _id: -1 })
+    .limit(limit + 1)
+    .populate('author', buildPremiumFeedAuthorProjection())
+    .lean();
+}
+
 function buildTrendingProjection() {
   return {
     title: 1,
@@ -297,6 +320,32 @@ function buildTrendingProjection() {
       _id: '$author._id',
       username: '$author.username',
       avatar: '$author.avatar'
+    }
+  };
+}
+
+function buildPremiumTrendingProjection() {
+  return {
+    title: 1,
+    description: 1,
+    content: 1,
+    images: 1,
+    tags: 1,
+    isPremium: 1,
+    likes: 1,
+    bookmarks: 1,
+    views: 1,
+    createdAt: 1,
+    engagementScore: 1,
+    author: {
+      _id: '$author._id',
+      username: '$author.username',
+      avatar: '$author.avatar',
+      subscriptionEnabled: '$author.subscriptionEnabled',
+      subscriptionPrice: '$author.subscriptionPrice',
+      membershipTitle: '$author.membershipTitle',
+      membershipDescription: '$author.membershipDescription',
+      membershipBenefits: '$author.membershipBenefits'
     }
   };
 }
@@ -351,8 +400,58 @@ async function fetchTrendingFeedItemsForModel(Model, baseQuery, cursor, limit) {
   return Model.aggregate(pipeline);
 }
 
+async function fetchTrendingPremiumFeedItemsForModel(Model, baseQuery, cursor, limit) {
+  const pipeline = [
+    { $match: baseQuery },
+    {
+      $addFields: {
+        engagementScore: {
+          $add: [
+            { $multiply: [{ $ifNull: ['$likes', 0] }, 3] },
+            { $multiply: [{ $ifNull: ['$bookmarks', 0] }, 2] }
+          ]
+        }
+      }
+    }
+  ];
+
+  const cursorStage = buildTrendingCursorMatchStage(cursor);
+  if (cursorStage) {
+    pipeline.push(cursorStage);
+  }
+
+  pipeline.push(
+    {
+      $lookup: {
+        from: 'users',
+        localField: 'author',
+        foreignField: '_id',
+        as: 'author'
+      }
+    },
+    {
+      $unwind: '$author'
+    },
+    {
+      $project: buildPremiumTrendingProjection()
+    },
+    {
+      $sort: {
+        engagementScore: -1,
+        createdAt: -1,
+        _id: -1
+      }
+    },
+    {
+      $limit: limit + 1
+    }
+  );
+
+  return Model.aggregate(pipeline);
+}
+
 async function loadHomeFeedPage({ sortBy, type, rawQuery, tag, cursor, limit }) {
-  const baseQuery = buildFeedBaseQuery({ rawQuery, tag });
+  const baseQuery = buildFeedBaseQuery({ rawQuery, tag, premiumMode: 'exclude' });
   const models = type === 'story'
     ? [Story]
     : type === 'artwork'
@@ -368,6 +467,106 @@ async function loadHomeFeedPage({ sortBy, type, rawQuery, tag, cursor, limit }) 
 
   return {
     items: pageItems,
+    nextCursor,
+    hasMore
+  };
+}
+
+function buildMaskedPreviewText(input, maxLength = 120) {
+  const normalized = String(input || '').replace(/\s+/g, ' ').trim();
+
+  if (!normalized) {
+    return '';
+  }
+
+  const truncated = normalized.slice(0, maxLength);
+  const revealLength = Math.max(18, Math.floor(truncated.length * 0.55));
+  const revealed = truncated.slice(0, revealLength);
+  const maskedTail = truncated
+    .slice(revealLength)
+    .replace(/[A-Za-z0-9À-ỹ]/g, '•');
+
+  return `${revealed}${maskedTail}${normalized.length > maxLength ? '…' : ''}`;
+}
+
+async function enrichPremiumFeedItemsWithAccess(items, viewerUserId) {
+  if (!viewerUserId || !items.length) {
+    return new Map();
+  }
+
+  const ArtistSubscription = (await import('../models/ArtistSubscription.js')).default;
+  const authorIds = [...new Set(items.map((item) => String(item.author?._id || item.author)).filter(Boolean))];
+  const subscriptions = await ArtistSubscription.find({
+    subscriber: viewerUserId,
+    artist: { $in: authorIds },
+    status: 'active',
+    expiresAt: { $gt: new Date() }
+  }).select('artist expiresAt').lean();
+
+  return new Map(subscriptions.map((subscription) => [String(subscription.artist), subscription]));
+}
+
+function buildPremiumTeaserItem(item, accessMap) {
+  const isStory = Object.prototype.hasOwnProperty.call(item, 'content');
+  const artistId = String(item.author?._id || item.author || '');
+  const activeSubscription = accessMap.get(artistId) || null;
+  const teaserSource = item.description || item.content || item.title || '';
+
+  return {
+    _id: item._id,
+    title: item.title,
+    description: item.description || '',
+    teaserText: buildMaskedPreviewText(teaserSource, isStory ? 150 : 110),
+    tags: item.tags || [],
+    createdAt: item.createdAt,
+    isPremium: true,
+    viewerHasAccess: Boolean(activeSubscription),
+    contentType: isStory ? 'story' : 'artwork',
+    detailPath: isStory ? `/story/${item._id}` : `/artwork/${item._id}`,
+    author: {
+      _id: artistId,
+      username: item.author?.username || 'Creator',
+      avatar: item.author?.avatar || null
+    },
+    teaser: {
+      imageCount: Array.isArray(item.images) ? item.images.length : 0,
+      maskedWordCount: String(teaserSource || '').split(/\s+/).filter(Boolean).length,
+      price: Number(item.author?.subscriptionPrice || 0)
+    },
+    membershipOffer: {
+      isEnabled: Boolean(item.author?.subscriptionEnabled),
+      price: Number(item.author?.subscriptionPrice || 0),
+      title: item.author?.membershipTitle || 'Artist Membership',
+      description: item.author?.membershipDescription || '',
+      benefits: Array.isArray(item.author?.membershipBenefits) ? item.author.membershipBenefits : [],
+      checkoutPath: `/membership/${artistId}`
+    },
+    membershipAccess: activeSubscription
+      ? {
+          expiresAt: activeSubscription.expiresAt
+        }
+      : null
+  };
+}
+
+async function loadMembershipFeedPage({ sortBy, type, rawQuery, tag, cursor, limit, viewerUserId }) {
+  const baseQuery = buildFeedBaseQuery({ rawQuery, tag, premiumMode: 'only' });
+  const models = type === 'story'
+    ? [Story]
+    : type === 'artwork'
+      ? [Artwork]
+      : [Story, Artwork];
+  const fetcher = sortBy === 'trending' ? fetchTrendingPremiumFeedItemsForModel : fetchNewestPremiumFeedItemsForModel;
+
+  const results = await Promise.all(models.map((Model) => fetcher(Model, baseQuery, cursor, limit)));
+  const mergedItems = results.flat().sort((left, right) => compareFeedItems(left, right, sortBy));
+  const pageItems = mergedItems.slice(0, limit);
+  const hasMore = mergedItems.length > limit;
+  const nextCursor = hasMore ? buildNextFeedCursor(pageItems[pageItems.length - 1], sortBy) : null;
+  const accessMap = await enrichPremiumFeedItemsWithAccess(pageItems, viewerUserId);
+
+  return {
+    items: pageItems.map((item) => buildPremiumTeaserItem(item, accessMap)),
     nextCursor,
     hasMore
   };
@@ -471,11 +670,11 @@ function sanitizeStatusFilter(query, reqUser, status) {
 }
 
 async function loadApprovedTagSources() {
-  const projection = '_id tags author createdAt likes bookmarks';
+  const projection = '_id tags author createdAt likes bookmarks isPremium';
 
   const [stories, artworks] = await Promise.all([
-    Story.find({ status: 'approved', tags: { $exists: true, $ne: [] } }).select(projection),
-    Artwork.find({ status: 'approved', tags: { $exists: true, $ne: [] } }).select(projection)
+    Story.find({ status: 'approved', isPremium: { $ne: true }, tags: { $exists: true, $ne: [] } }).select(projection),
+    Artwork.find({ status: 'approved', isPremium: { $ne: true }, tags: { $exists: true, $ne: [] } }).select(projection)
   ]);
 
   return [...stories, ...artworks];
@@ -583,6 +782,7 @@ async function loadCachedTrendingContent() {
 
       const query = {
         status: 'approved',
+        isPremium: { $ne: true },
         createdAt: { $gte: thirtyDaysAgo }
       };
 
@@ -636,7 +836,7 @@ async function loadCachedPopularCreators() {
     key: `popular-creators:likes:limit=${POPULAR_CREATORS_LIMIT}`,
     ttlSeconds: 120,
     loader: async () => {
-      const approvedMatchStage = { $match: { status: 'approved' } };
+      const approvedMatchStage = { $match: { status: 'approved', isPremium: { $ne: true } } };
       const groupStage = {
         $group: {
           _id: '$author',
@@ -800,10 +1000,39 @@ async function invalidateContentInteractionCache() {
   ]);
 }
 
+async function resolvePremiumPublishPermission(userId) {
+  if (!userId) {
+    return false;
+  }
+
+  const author = await User.findById(userId).select('creatorPlan premiumStatus subscriptionEnabled subscriptionPrice');
+  return canPublishSubscriberOnlyContent(author);
+}
+
+function buildPremiumContentLockedPayload({ content, contentType }) {
+  const artistId = content.author?._id ? String(content.author._id) : String(content.author);
+
+  return {
+    contentId: content._id,
+    contentType,
+    title: content.title,
+    artist: {
+      id: artistId,
+      username: content.author?.username || 'Creator'
+    },
+    membership: {
+      isEnabled: Boolean(content.author?.subscriptionEnabled),
+      price: Number(content.author?.subscriptionPrice || 0),
+      checkoutPath: `/membership/${artistId}`
+    }
+  };
+}
+
 // Create a new story
 export async function createStory(req, res) {
   try {
-    const { title, description, content, tags, status } = req.body;
+    const { title, description, content, tags, status, isPremium } = req.body;
+    const nextIsPremium = isPremium === 'true' || isPremium === true;
 
     const parsedTags = parseTagsInput(tags, {
       strictHashtagFormat: typeof tags === 'string'
@@ -826,6 +1055,19 @@ export async function createStory(req, res) {
 
     const images = resolveImagesFromRequest(req);
 
+    if (nextIsPremium) {
+      const canPublishPremium = await resolvePremiumPublishPermission(req.user.userId);
+      if (!canPublishPremium) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'PREMIUM_PUBLISH_RESTRICTED',
+            message: 'Only active premium artists with membership enabled can publish members-only content'
+          }
+        });
+      }
+    }
+
     const story = new Story({
       title,
       description,
@@ -833,7 +1075,8 @@ export async function createStory(req, res) {
       tags: parsedTags.tags,
       images,
       author: req.user.userId,
-      status: normalizePublishStatus(status)
+      status: normalizePublishStatus(status),
+      isPremium: nextIsPremium
     });
 
     await story.save();
@@ -871,7 +1114,8 @@ export async function createArtwork(req, res) {
     console.log('Body:', req.body);
     console.log('Files:', req.files);
     
-    const { title, description, status } = req.body;
+    const { title, description, status, isPremium } = req.body;
+    const nextIsPremium = isPremium === 'true' || isPremium === true;
     let images = [];
     const parsedTags = parseTagsInput(req.body.tags, {
       strictHashtagFormat: typeof req.body.tags === 'string'
@@ -910,13 +1154,27 @@ export async function createArtwork(req, res) {
       });
     }
 
+    if (nextIsPremium) {
+      const canPublishPremium = await resolvePremiumPublishPermission(req.user.userId);
+      if (!canPublishPremium) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'PREMIUM_PUBLISH_RESTRICTED',
+            message: 'Only active premium artists with membership enabled can publish members-only content'
+          }
+        });
+      }
+    }
+
     const artwork = new Artwork({
       title,
       description,
       images,
       tags: parsedTags.tags,
       author: req.user.userId,
-      status: normalizePublishStatus(status)
+      status: normalizePublishStatus(status),
+      isPremium: nextIsPremium
     });
 
     await artwork.save();
@@ -958,16 +1216,16 @@ export async function getContent(req, res) {
     let contentType = 'Story';
     
     if (type === 'story') {
-      content = await Story.findById(id).populate('author', 'username avatar');
+      content = await Story.findById(id).populate('author', 'username avatar creatorPlan premiumStatus premiumExpiresAt subscriptionEnabled subscriptionPrice');
       contentType = 'Story';
     } else if (type === 'artwork') {
-      content = await Artwork.findById(id).populate('author', 'username avatar');
+      content = await Artwork.findById(id).populate('author', 'username avatar creatorPlan premiumStatus premiumExpiresAt subscriptionEnabled subscriptionPrice');
       contentType = 'Artwork';
     } else {
       // Try to find in both collections
-      content = await Story.findById(id).populate('author', 'username avatar');
+      content = await Story.findById(id).populate('author', 'username avatar creatorPlan premiumStatus premiumExpiresAt subscriptionEnabled subscriptionPrice');
       if (!content) {
-        content = await Artwork.findById(id).populate('author', 'username avatar');
+        content = await Artwork.findById(id).populate('author', 'username avatar creatorPlan premiumStatus premiumExpiresAt subscriptionEnabled subscriptionPrice');
         contentType = 'Artwork';
       }
     }
@@ -1003,6 +1261,26 @@ export async function getContent(req, res) {
           message: 'Content not found'
         }
       });
+    }
+
+    if (content.isPremium) {
+      const artistId = content.author?._id ? String(content.author._id) : String(content.author);
+      const hasAccess = await canAccessPremiumContent({
+        viewerUserId: req.user?.userId || null,
+        viewerRole: req.user?.role || null,
+        artistId
+      });
+
+      if (!hasAccess) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'PREMIUM_CONTENT_LOCKED',
+            message: 'This members-only post requires an active membership to this artist'
+          },
+          data: buildPremiumContentLockedPayload({ content, contentType })
+        });
+      }
     }
 
     // Increment view counter
@@ -1080,6 +1358,58 @@ export async function getHomeFeed(req, res) {
   }
 }
 
+export async function getMembershipFeed(req, res) {
+  try {
+    const sortBy = req.query.sort === 'trending' ? 'trending' : 'newest';
+    const requestedType = req.query.type;
+    const type = ['story', 'artwork'].includes(requestedType) ? requestedType : 'all';
+    const rawQuery = String(req.query.q || '').trim();
+    const tag = normalizeTagsForQuery(req.query.tag || '')[0] || '';
+    const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || DEFAULT_HOME_FEED_LIMIT, 1), MAX_HOME_FEED_LIMIT);
+    const rawCursor = req.query.cursor;
+    const cursor = rawCursor ? decodeFeedCursor(rawCursor) : null;
+
+    if (rawCursor && !cursor) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Invalid feed cursor'
+        }
+      });
+    }
+
+    const feedPage = await loadMembershipFeedPage({
+      sortBy,
+      type,
+      rawQuery,
+      tag,
+      cursor,
+      limit,
+      viewerUserId: req.user?.userId || null
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: feedPage.items,
+      pageInfo: {
+        limit,
+        hasMore: feedPage.hasMore,
+        nextCursor: feedPage.nextCursor
+      }
+    });
+  } catch (error) {
+    console.error('Get membership feed error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'An unexpected error occurred'
+      }
+    });
+  }
+}
+
 // Search content
 export async function searchContent(req, res) {
   try {
@@ -1094,6 +1424,7 @@ export async function searchContent(req, res) {
     const query = {};
 
     sanitizeStatusFilter(query, req.user, status);
+    query.isPremium = { $ne: true };
 
     // Search by text in title or description
     if (rawQuery) {
@@ -1252,10 +1583,26 @@ export async function updateContent(req, res) {
     }
 
     const nextStatus = normalizePublishStatus(req.body.status ?? content.status);
+    const nextIsPremium = req.body.isPremium === 'true' || req.body.isPremium === true;
+
+    if (nextIsPremium) {
+      const canPublishPremium = await resolvePremiumPublishPermission(req.user.userId);
+      if (!canPublishPremium) {
+        return res.status(403).json({
+          success: false,
+          error: {
+            code: 'PREMIUM_PUBLISH_RESTRICTED',
+            message: 'Only active premium artists with membership enabled can publish members-only content'
+          }
+        });
+      }
+    }
+
     content.title = req.body.title ?? content.title;
     content.description = req.body.description ?? content.description;
     content.tags = parsedTags.tags;
     content.status = nextStatus;
+    content.isPremium = nextIsPremium;
 
     if (isStory) {
       if (!req.body.content || !req.body.content.trim()) {

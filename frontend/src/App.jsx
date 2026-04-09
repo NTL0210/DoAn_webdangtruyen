@@ -11,15 +11,20 @@ import { AppLayout } from './components/layout/AppLayout';
 const SplashScreen = lazy(routeModuleLoaders.splash);
 const LoginPage = lazy(routeModuleLoaders.login);
 const RegisterPage = lazy(routeModuleLoaders.register);
+const ForgotPasswordPage = lazy(routeModuleLoaders.forgotPassword);
+const MoMoReturnPage = lazy(routeModuleLoaders.momoReturn);
 const HomePage = lazy(routeModuleLoaders.home);
 const StoriesPage = lazy(routeModuleLoaders.stories);
 const ArtworksPage = lazy(routeModuleLoaders.artworks);
+const MembershipPostsPage = lazy(routeModuleLoaders.memberships);
 const SearchPage = lazy(routeModuleLoaders.search);
 const CreateStoryPage = lazy(routeModuleLoaders.createStory);
 const CreateArtworkPage = lazy(routeModuleLoaders.createArtwork);
 const StoryPage = lazy(routeModuleLoaders.story);
 const ArtworkPage = lazy(routeModuleLoaders.artwork);
 const ProfilePage = lazy(routeModuleLoaders.profile);
+const PremiumPage = lazy(routeModuleLoaders.premium);
+const ArtistMembershipPage = lazy(routeModuleLoaders.artistMembership);
 const NotificationPage = lazy(routeModuleLoaders.notifications);
 const RemovedContentPage = lazy(routeModuleLoaders.postUnavailable);
 const AdminPage = lazy(routeModuleLoaders.admin);
@@ -84,18 +89,23 @@ function App() {
           {/* Auth pages */}
           <Route path="/login" element={<LoginPage />} />
           <Route path="/register" element={<RegisterPage />} />
+          <Route path="/forgot-password" element={<ForgotPasswordPage />} />
+          <Route path="/payment/momo/return" element={<MoMoReturnPage />} />
 
           {/* Protected pages with AppLayout */}
           <Route element={<ProtectedRoute><AppLayout /></ProtectedRoute>}>
             <Route path="/home" element={<HomePage />} />
             <Route path="/stories" element={<StoriesPage />} />
             <Route path="/artworks" element={<ArtworksPage />} />
+            <Route path="/memberships" element={<MembershipPostsPage />} />
             <Route path="/saved" element={<SavedPage />} />
             <Route path="/search" element={<SearchPage />} />
             <Route path="/notifications" element={<NotificationPage />} />
             <Route path="/post-unavailable" element={<RemovedContentPage />} />
             <Route path="/create-story" element={<CreateStoryPage />} />
             <Route path="/create-artwork" element={<CreateArtworkPage />} />
+            <Route path="/premium" element={<PremiumPage />} />
+            <Route path="/membership/:artistId" element={<ArtistMembershipPage />} />
             <Route path="/story/:id" element={<StoryPage />} />
             <Route path="/story/:id/edit" element={<CreateStoryPage />} />
             <Route path="/artwork/:id" element={<ArtworkPage />} />

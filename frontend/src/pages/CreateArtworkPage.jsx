@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import ImageOrderPicker, { buildOrderedImagePayload, createExistingImageItem, createFileImageItems, revokeImageItemPreview } from '../components/common/ImageOrderPicker';
+import { AudienceVisibilityToggle } from '../components/common/AudienceVisibilityToggle';
+import { PremiumPromptBanner } from '../components/common/PremiumPromptBanner';
 import { getCurrentUser, getToken } from '../services/authService';
+import { invalidateContentMutationCaches } from '../services/appDataInvalidation';
 import { validateImageFilesBeforeUpload } from '../utils/fileValidation';
 import { parseStrictHashtagInput } from '../utils/hashtags';
 import { formatTag, normalizeTagList } from '../utils/hashtags';
@@ -18,6 +21,7 @@ export default function CreateArtworkPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
+  const [isPremium, setIsPremium] = useState(false);
   const imageItemsRef = useRef([]);
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
@@ -44,6 +48,7 @@ export default function CreateArtworkPage() {
 
         setTitle(data.data.title || '');
         setDescription(data.data.description || '');
+        setIsPremium(Boolean(data.data.isPremium));
         setTags(normalizeTagList(data.data.tags || []).map((tag) => formatTag(tag)).join(' '));
         setImageItems((data.data.images || []).map((image, index) => createExistingImageItem(image, index)));
       } catch (err) {
@@ -120,6 +125,7 @@ export default function CreateArtworkPage() {
       formData.append('title', title);
       formData.append('description', description);
       formData.append('status', status);
+      formData.append('isPremium', isPremium);
 
       const parsedTags = parseStrictHashtagInput(tags);
       if (parsedTags.error) {
@@ -175,6 +181,7 @@ export default function CreateArtworkPage() {
       const data = await response.json();
 
       if (data.success) {
+        invalidateContentMutationCaches({ includeTagDirectory: true });
         navigate(isEditMode ? `/artwork/${id}` : '/artworks');
       } else {
         setError(data.error.message);
@@ -208,6 +215,8 @@ export default function CreateArtworkPage() {
         <h1 className="detail-title text-3xl">{isEditMode ? 'Edit Artwork' : 'Upload Artwork'}</h1>
       </div>
 
+      {currentUser.creatorPlan !== 'premium_artist' ? <PremiumPromptBanner variant="create" /> : null}
+
       <form onSubmit={handleSubmit} className="panel p-6">
         {error && (
           <div className="bg-red-500/10 border border-red-500/30 text-red-300 px-4 py-3 rounded-2xl mb-6">
@@ -220,6 +229,10 @@ export default function CreateArtworkPage() {
             Posting is locked until {restrictionEndsAt.toLocaleString()}. Reason: {currentUser.postingRestrictionReason}
           </div>
         ) : null}
+
+        {currentUser.creatorPlan === 'premium_artist' && (
+          <AudienceVisibilityToggle value={isPremium} onChange={setIsPremium} contentLabel="artwork" />
+        )}
 
         <div className="mb-6">
           <label className="block text-sm font-medium text-slate-300 mb-2">

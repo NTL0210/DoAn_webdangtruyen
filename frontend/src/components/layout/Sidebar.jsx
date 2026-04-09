@@ -1,6 +1,6 @@
-import { PenSquare, UserCircle2, House, BookOpen, Image, Bell, Shield, Bookmark } from 'lucide-react';
+import { PenSquare, UserCircle2, House, BookOpen, Image, Bell, Shield, Bookmark, LockKeyhole } from 'lucide-react';
 import { useEffect, useState } from 'react';
-import { NavLink, useNavigate } from 'react-router-dom';
+import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../common/Button';
 import { getCurrentUser, logout, subscribeToCurrentUserChange } from '../../services/authService';
 import { getRoutePrefetchProps } from '../../services/routePrefetch';
@@ -11,6 +11,7 @@ const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
 export function Sidebar() {
   const navigate = useNavigate();
+  const location = useLocation();
   const token = localStorage.getItem('token');
   const [user, setUser] = useState(() => getCurrentUser());
   const isAuthenticated = !!token;
@@ -22,10 +23,30 @@ export function Sidebar() {
     navigate('/login');
   };
 
+  const handleNavClick = (event, link) => {
+    const isModifiedClick = event.metaKey || event.altKey || event.ctrlKey || event.shiftKey;
+
+    if (isModifiedClick || event.button !== 0) {
+      return;
+    }
+
+    if (link.feedRefreshKey && location.pathname === link.to) {
+      event.preventDefault();
+      navigate(link.to, {
+        replace: true,
+        state: {
+          feedTab: link.feedRefreshKey,
+          feedRefreshKey: Date.now()
+        }
+      });
+    }
+  };
+
   const links = [
-    { to: '/home', label: 'Home', icon: House },
-    { to: '/stories', label: 'Stories', icon: BookOpen },
-    { to: '/artworks', label: 'Artworks', icon: Image },
+    { to: '/home', label: 'Home', icon: House, feedRefreshKey: 'home' },
+    { to: '/stories', label: 'Stories', icon: BookOpen, feedRefreshKey: 'stories' },
+    { to: '/artworks', label: 'Artworks', icon: Image, feedRefreshKey: 'artworks' },
+    { to: '/memberships', label: 'Membership Feed', icon: LockKeyhole, feedRefreshKey: 'memberships' },
     { to: '/notifications', label: 'Notifications', icon: Bell, protected: true },
     { to: '/create-story', label: 'Create Story', icon: PenSquare, protected: true },
     { to: '/create-artwork', label: 'Create Artwork', icon: PenSquare, protected: true },
@@ -55,6 +76,7 @@ export function Sidebar() {
                   key={link.to}
                   to={link.to}
                   {...getRoutePrefetchProps(link.to)}
+                  onClick={(event) => handleNavClick(event, link)}
                   className={({ isActive }) =>
                     `sidebar-link flex items-center gap-3 rounded-2xl px-4 py-3 text-sm transition ${
                       isActive ? 'sidebar-link-active' : ''

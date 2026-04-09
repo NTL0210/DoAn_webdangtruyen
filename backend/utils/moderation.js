@@ -1,13 +1,55 @@
 export const POSTING_RESTRICTION_DAYS = 3;
+export const PERMANENT_BAN_APPEAL_WINDOW_DAYS = 5;
 
 export function normalizeModerationReason(reason) {
   return String(reason || '').trim();
 }
 
-function addDays(date, days) {
+export function addDays(date, days) {
   const result = new Date(date);
   result.setDate(result.getDate() + days);
   return result;
+}
+
+export function getPermanentBanDeletionDeadline(user) {
+  if (!user?.permanentlyBannedAt) {
+    return null;
+  }
+
+  const bannedAt = new Date(user.permanentlyBannedAt);
+  if (Number.isNaN(bannedAt.getTime())) {
+    return null;
+  }
+
+  return addDays(bannedAt, PERMANENT_BAN_APPEAL_WINDOW_DAYS);
+}
+
+export function getPermanentBanDeletionStatus(user, now = new Date()) {
+  const scheduledFor = getPermanentBanDeletionDeadline(user);
+
+  if (!scheduledFor) {
+    return {
+      isPendingPermanentDeletion: false,
+      permanentDeletionScheduledFor: null,
+      permanentDeletionMillisecondsRemaining: null,
+      permanentDeletionDaysRemaining: null,
+      isPermanentDeletionOverdue: false
+    };
+  }
+
+  const millisecondsRemaining = scheduledFor.getTime() - now.getTime();
+
+  return {
+    isPendingPermanentDeletion: true,
+    permanentDeletionScheduledFor: scheduledFor,
+    permanentDeletionMillisecondsRemaining: Math.max(0, millisecondsRemaining),
+    permanentDeletionDaysRemaining: Math.max(0, Math.ceil(millisecondsRemaining / (24 * 60 * 60 * 1000))),
+    isPermanentDeletionOverdue: millisecondsRemaining <= 0
+  };
+}
+
+export function serializePermanentBan(user, now = new Date()) {
+  return getPermanentBanDeletionStatus(user, now);
 }
 
 export function getActivePostingRestriction(user) {

@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import ImageOrderPicker, { buildOrderedImagePayload, createExistingImageItem, createFileImageItems, revokeImageItemPreview } from '../components/common/ImageOrderPicker';
+import { AudienceVisibilityToggle } from '../components/common/AudienceVisibilityToggle';
+import { PremiumPromptBanner } from '../components/common/PremiumPromptBanner';
 import { getCurrentUser, getToken } from '../services/authService';
+import { invalidateContentMutationCaches } from '../services/appDataInvalidation';
 import { validateImageFilesBeforeUpload } from '../utils/fileValidation';
 import { parseStrictHashtagInput } from '../utils/hashtags';
 import { formatTag, normalizeTagList } from '../utils/hashtags';
@@ -19,6 +22,7 @@ export default function CreateStoryPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const [pageLoading, setPageLoading] = useState(false);
+  const [isPremium, setIsPremium] = useState(false);
   const imageItemsRef = useRef([]);
   const navigate = useNavigate();
   const currentUser = getCurrentUser();
@@ -46,6 +50,7 @@ export default function CreateStoryPage() {
         setTitle(data.data.title || '');
         setDescription(data.data.description || '');
         setContent(data.data.content || '');
+        setIsPremium(Boolean(data.data.isPremium));
         setTags(normalizeTagList(data.data.tags || []).map((tag) => formatTag(tag)).join(' '));
         setImageItems((data.data.images || []).map((image, index) => createExistingImageItem(image, index)));
       } catch (err) {
@@ -136,6 +141,7 @@ export default function CreateStoryPage() {
       formData.append('description', description);
       formData.append('content', content);
       formData.append('status', status);
+      formData.append('isPremium', isPremium);
 
       parsedTags.tags.forEach((tag) => {
         formData.append('tags', tag);
@@ -166,6 +172,7 @@ export default function CreateStoryPage() {
       const data = await response.json();
 
       if (data.success) {
+        invalidateContentMutationCaches({ includeTagDirectory: true });
         navigate(isEditMode ? `/story/${id}` : '/stories');
       } else {
         setError(data.error.message);
@@ -199,6 +206,8 @@ export default function CreateStoryPage() {
         <h1 className="detail-title text-3xl">{isEditMode ? 'Edit Story' : 'Create New Story'}</h1>
       </div>
 
+      {currentUser.creatorPlan !== 'premium_artist' ? <PremiumPromptBanner variant="create" /> : null}
+
       <form onSubmit={handleSubmit} className="panel p-6">
         {error && (
           <div className="bg-red-500/10 border border-red-500/30 text-red-300 px-4 py-3 rounded-2xl mb-6">
@@ -211,6 +220,10 @@ export default function CreateStoryPage() {
             Posting is locked until {restrictionEndsAt.toLocaleString()}. Reason: {currentUser.postingRestrictionReason}
           </div>
         ) : null}
+
+        {currentUser.creatorPlan === 'premium_artist' && (
+          <AudienceVisibilityToggle value={isPremium} onChange={setIsPremium} contentLabel="story" />
+        )}
 
         <div className="mb-6">
           <label className="block text-sm font-medium text-slate-300 mb-2">

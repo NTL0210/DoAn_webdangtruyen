@@ -3,7 +3,69 @@ import Notification from '../models/Notification.js';
 import Story from '../models/Story.js';
 import Artwork from '../models/Artwork.js';
 import { CACHE_NAMESPACES, invalidateCacheNamespaces } from '../services/cacheStore.js';
+import { canAccessPremiumContent } from '../services/subscriptionService.js';
 import webSocketManager from '../websocket/WebSocketManager.js';
+
+async function resolveContentAccessContext(id, type) {
+  let content;
+  let contentType;
+
+  if (type === 'story') {
+    content = await Story.findById(id).populate('author', 'username subscriptionEnabled subscriptionPrice');
+    contentType = 'Story';
+  } else if (type === 'artwork') {
+    content = await Artwork.findById(id).populate('author', 'username subscriptionEnabled subscriptionPrice');
+    contentType = 'Artwork';
+  } else {
+    content = await Story.findById(id).populate('author', 'username subscriptionEnabled subscriptionPrice');
+    contentType = content ? 'Story' : null;
+
+    if (!content) {
+      content = await Artwork.findById(id).populate('author', 'username subscriptionEnabled subscriptionPrice');
+      contentType = content ? 'Artwork' : null;
+    }
+  }
+
+  return { content, contentType };
+}
+
+async function ensurePremiumCommentAccess({ content, req, res }) {
+  if (!content?.isPremium) {
+    return true;
+  }
+
+  const artistId = content.author?._id ? String(content.author._id) : String(content.author);
+  const hasAccess = await canAccessPremiumContent({
+    viewerUserId: req.user?.userId || null,
+    viewerRole: req.user?.role || null,
+    artistId
+  });
+
+  if (hasAccess) {
+    return true;
+  }
+
+  res.status(403).json({
+    success: false,
+    error: {
+      code: 'PREMIUM_CONTENT_LOCKED',
+      message: 'Comments for this members-only post are available to active members only'
+    },
+    data: {
+      artist: {
+        id: artistId,
+        username: content.author?.username || 'Creator'
+      },
+      membership: {
+        isEnabled: Boolean(content.author?.subscriptionEnabled),
+        price: Number(content.author?.subscriptionPrice || 0),
+        checkoutPath: `/membership/${artistId}`
+      }
+    }
+  });
+
+  return false;
+}
 
 // Create a new comment
 export async function createComment(req, res) {
@@ -13,24 +75,7 @@ export async function createComment(req, res) {
     const { type } = req.query; // 'story' or 'artwork'
 
     // Find the content to get the author
-    let content;
-    let contentType;
-    
-    if (type === 'story') {
-      content = await Story.findById(id);
-      contentType = 'Story';
-    } else if (type === 'artwork') {
-      content = await Artwork.findById(id);
-      contentType = 'Artwork';
-    } else {
-      content = await Story.findById(id);
-      contentType = content ? 'Story' : null;
-
-      if (!content) {
-        content = await Artwork.findById(id);
-        contentType = content ? 'Artwork' : null;
-      }
-    }
+    const { content, contentType } = await resolveContentAccessContext(id, type);
 
     if (!content) {
       return res.status(404).json({
@@ -51,6 +96,10 @@ export async function createComment(req, res) {
           message: 'Cannot comment on non-approved content'
         }
       });
+    }
+
+    if (!(await ensurePremiumCommentAccess({ content, req, res }))) {
+      return;
     }
 
     // Create comment
@@ -169,6 +218,22 @@ export async function deleteComment(req, res) {
 export async function getComments(req, res) {
   try {
     const { id } = req.params; // content ID
+    const type = String(req.query.type || '').trim().toLowerCase();
+    const { content } = await resolveContentAccessContext(id, type);
+
+    if (!content) {
+      return res.status(404).json({
+        success: false,
+        error: {
+          code: 'NOT_FOUND',
+          message: 'Content not found'
+        }
+      });
+    }
+
+    if (!(await ensurePremiumCommentAccess({ content, req, res }))) {
+      return;
+    }
 
     const comments = await Comment.find({ contentId: id })
       .populate('user', 'username avatar')

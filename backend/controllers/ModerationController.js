@@ -4,9 +4,10 @@ import Artwork from '../models/Artwork.js';
 import Report from '../models/Report.js';
 import User from '../models/User.js';
 import AccountAppeal from '../models/AccountAppeal.js';
+import ModerationAuditLog from '../models/ModerationAuditLog.js';
 import ModerationCase from '../models/ModerationCase.js';
 import webSocketManager from '../websocket/WebSocketManager.js';
-import { POSTING_RESTRICTION_DAYS, applyPostingRestriction, getActivePostingRestriction, normalizeModerationReason, serializePostingRestriction } from '../utils/moderation.js';
+import { POSTING_RESTRICTION_DAYS, applyPostingRestriction, getActivePostingRestriction, getPermanentBanDeletionDeadline, normalizeModerationReason, serializePermanentBan, serializePostingRestriction } from '../utils/moderation.js';
 import {
   assignIncidentToAdmin,
   buildReasonSummaryPipeline,
@@ -16,6 +17,8 @@ import {
   serializeWorkflow
 } from '../utils/moderationQueue.js';
 import { CACHE_NAMESPACES, invalidateCacheNamespaces } from '../services/cacheStore.js';
+import { recordModerationAuditEvent } from '../services/moderationAudit.js';
+import { hideUserContentForPermanentBan, restoreUserContentAfterPermanentBan } from '../services/permanentBanCleanup.js';
 import { removeContentFromAllSavedCollections } from '../utils/savedContent.js';
 
 const MAX_REPORT_DETAILS_LIMIT = 50;
@@ -41,6 +44,15 @@ async function deleteModerationCaseForContent(contentId, contentType) {
 async function loadContent(type, id) {
   const Model = getContentModel(type);
   return Model ? Model.findById(id) : null;
+}
+
+async function getActorUsername(userId) {
+  if (!userId) {
+    return 'system';
+  }
+
+  const actor = await User.findById(userId).select('username');
+  return actor?.username || 'system';
 }
 
 // Dismiss reports and keep the content visible
@@ -98,6 +110,29 @@ export async function dismissReports(req, res) {
         message: 'An unexpected error occurred'
       }
     });
+  }
+}
+
+export async function getModerationAuditHistory(req, res) {
+  try {
+    const limitParam = parseInt(req.query.limit, 10) || 50;
+    const limit = Math.min(limitParam, MAX_REPORT_DETAILS_LIMIT);
+    const beforeId = String(req.query.before || '').trim();
+    const query = {};
+
+    if (beforeId && mongoose.Types.ObjectId.isValid(beforeId)) {
+      query._id = { $lt: mongoose.Types.ObjectId(beforeId) };
+    }
+
+    const events = await ModerationAuditLog.find(query)
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    return res.status(200).json({ success: true, data: events, message: 'Moderation audit history loaded' });
+  } catch (error) {
+    console.error('Get moderation audit history error:', error);
+    return res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' } });
   }
 }
 
@@ -373,6 +408,9 @@ export async function permanentlyBanUser(req, res) {
     user.lastModeratedAt = new Date();
     await user.save();
 
+    const actorUsername = await getActorUsername(req.user.userId);
+    const hiddenContent = await hideUserContentForPermanentBan(user._id);
+
     await AccountAppeal.updateMany(
       { user: user._id, status: 'pending' },
       {
@@ -384,6 +422,19 @@ export async function permanentlyBanUser(req, res) {
         }
       }
     );
+
+    await recordModerationAuditEvent({
+      actionType: 'permanent-ban',
+      actorUserId: req.user.userId,
+      actorUsername,
+      targetUser: user,
+      reason,
+      metadata: {
+        hiddenStories: hiddenContent?.hiddenStories || [],
+        hiddenArtworks: hiddenContent?.hiddenArtworks || [],
+        permanentDeletionScheduledFor: getPermanentBanDeletionDeadline(user)
+      }
+    });
 
     await webSocketManager.sendNotification(user._id, {
       recipient: user._id,
@@ -443,6 +494,18 @@ export async function unbanUser(req, res) {
     user.pendingLoginNoticeTitle = 'Account restored';
     user.pendingLoginNoticeMessage = 'Your account appeal was approved. Your access has been restored and you can use the platform again.';
     await user.save();
+
+    const actorUsername = await getActorUsername(req.user.userId);
+    const restoredContent = await restoreUserContentAfterPermanentBan(user._id);
+
+    await recordModerationAuditEvent({
+      actionType: 'account-restored',
+      actorUserId: req.user.userId,
+      actorUsername,
+      targetUser: user,
+      reason: 'Manual admin restore',
+      metadata: restoredContent
+    });
 
     await webSocketManager.sendNotification(user._id, {
       recipient: user._id,
@@ -542,6 +605,18 @@ export async function approveAccountAppeal(req, res) {
       user.pendingLoginNoticeMessage = 'Your appeal was approved. Your account has been unbanned successfully.';
       await user.save();
 
+      const actorUsername = await getActorUsername(req.user.userId);
+      const restoredContent = await restoreUserContentAfterPermanentBan(user._id);
+
+      await recordModerationAuditEvent({
+        actionType: 'appeal-approved',
+        actorUserId: req.user.userId,
+        actorUsername,
+        targetUser: user,
+        reason: appeal.reviewReason,
+        metadata: restoredContent
+      });
+
       await webSocketManager.sendNotification(user._id, {
         recipient: user._id,
         type: 'approval',
@@ -611,6 +686,19 @@ export async function rejectAccountAppeal(req, res) {
     appeal.reviewedBy = req.user.userId;
     appeal.reviewedAt = new Date();
     await appeal.save();
+
+    const actorUsername = await getActorUsername(req.user.userId);
+
+    await recordModerationAuditEvent({
+      actionType: 'appeal-rejected',
+      actorUserId: req.user.userId,
+      actorUsername,
+      targetUser: appeal.user,
+      reason,
+      metadata: {
+        permanentDeletionScheduledFor: appeal.user ? getPermanentBanDeletionDeadline(appeal.user) : null
+      }
+    });
 
     if (appeal.user?._id) {
       await webSocketManager.sendNotification(appeal.user._id, {

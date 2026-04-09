@@ -3,6 +3,7 @@ import app from './app.js';
 import { env, validateEnvironment } from './config/env.js';
 import { connectToDatabase, disconnectFromDatabase } from './config/database.js';
 import { initializeCache, shutdownCache } from './services/cacheStore.js';
+import { startPermanentBanCleanupScheduler, stopPermanentBanCleanupScheduler } from './services/permanentBanCleanup.js';
 import webSocketManager from './websocket/WebSocketManager.js';
 
 let server;
@@ -51,6 +52,8 @@ async function shutdown(signal, error = null) {
     console.error('[server] Cache shutdown error:', cacheError);
   }
 
+  stopPermanentBanCleanupScheduler();
+
   process.exit(exitCode);
 }
 
@@ -61,6 +64,7 @@ async function startServer() {
 
   server = createServer(app);
   webSocketManager.initialize(server);
+  startPermanentBanCleanupScheduler();
 
   await new Promise((resolve, reject) => {
     server.once('error', reject);
