@@ -1,26 +1,33 @@
 4.1. Các chức năng cơ bản
 Module	Số chức năng	Mô tả chức năng
-Auth	4	register, login, submitAccountAppeal, logout
-Content	14	createStory, createArtwork, get, getHomeFeed, search, update, delete, getTrending, getPopularCreators, getRecommendedTags, getTrendingTags, getTagDirectory, toggleLike, toggleBookmark
+Auth	10	register, resendVerificationOtp, resendPhoneVerification, verifyPhoneOtp, verifyEmailOtp, requestPasswordReset, resetPasswordWithOtp, login, submitAccountAppeal, logout
+Content	14	createStory, createArtwork, getContent, getHomeFeed, searchContent, updateContent, deleteContent, getTrending, getPopularCreators, getRecommendedTags, getTrendingTags, getTagDirectory, toggleLike, toggleBookmark
 Comment	3	createComment, deleteComment, getComments
-Moderation	13	dismissReports, banContent, getUsersForModeration, banUser, permanentlyBanUser, unbanUser, getAccountAppeals, approveAccountAppeal, rejectAccountAppeal, getReports, openReportIncident, releaseReportIncident, getReportDetails
+Moderation	14	dismissReports, getModerationAuditHistory, banContent, getUsersForModeration, banUser, permanentlyBanUser, unbanUser, getAccountAppeals, approveAccountAppeal, rejectAccountAppeal, getReports, openReportIncident, releaseReportIncident, getReportDetails
 Notification	3	getNotifications, markAsRead, deleteNotification
+Payment	6	createMomoSubscriptionCheckout, createMomoPremiumCheckout, handleMomoIpn, handleMomoReturn, getPaymentStatus, confirmPaymentFromReturnDev
 Report	1	createReport
-User	14	getProfile, updateProfile, updateAvatar, getFavoriteTags, addFavoriteTag, removeFavoriteTag, followUser, unfollowUser, getFollowers, getFollowing, getReadingHistory, searchCreators, getBookmarkedContent, getLikedContent
+User	15	getProfile, updateProfile, updatePhoneNumber, updateAvatar, getFavoriteTags, addFavoriteTag, removeFavoriteTag, followUser, unfollowUser, getFollowers, getFollowing, getReadingHistory, searchCreators, getBookmarkedContent, getLikedContent
 4.2. Mô tả các chức năng
 -	Auth:
-o	register: Đăng ký tài khoản mới với username, email, mật khẩu; kiểm tra trùng lặp; mã hóa mật khẩu; lưu vào database với role 'user'
-o	login: Đăng nhập với email, mật khẩu; kiểm tra tài khoản; tạo JWT token 7 ngày nếu hợp lệ; xử lý tài khoản bị cấm; kiểm tra login notice
-o	submitAccountAppeal: Gửi yêu cầu appeal cho tài khoản bị cấm vĩnh viễn; cần appeal token, lý do, bằng chứng; kiểm tra token và trạng thái; lưu appeal và thông báo admin
+o	register: Đăng ký tài khoản mới với username, email, mật khẩu; kiểm tra trùng lặp; mã hóa mật khẩu; lưu vào database với role 'user'; tự động tạo OTP verification và gửi email
+o	resendVerificationOtp: Gửi lại mã OTP xác thực email; kiểm tra email tồn tại; kiểm tra email chưa verify; tạo OTP mới; gửi email kèm mã (privacy: không tiết lộ email không tồn tại)
+o	resendPhoneVerification: Gửi lại mã OTP xác thực số điện thoại; kiểm tra số điện thoại tồn tại; tạo OTP mới; gửi SMS kèm mã (privacy: không tiết lộ số điện thoại không tồn tại)
+o	verifyPhoneOtp: Xác thực số điện thoại bằng mã OTP; kiểm tra số điện thoại và code; xác thực mã OTP; cập nhật trạng thái verified
+o	verifyEmailOtp: Xác thực email bằng mã OTP; kiểm tra email và code; xác thực mã OTP; set status isVerified = true
+o	requestPasswordReset: Yêu cầu đặt lại mật khẩu; kiểm tra email; tạo OTP reset; gửi email kèm mã (privacy: không tiết lộ email không tồn tại)
+o	resetPasswordWithOtp: Đặt lại mật khẩu; kiểm tra email, code, mật khẩu; validate độ dài mật khẩu ≥ 8; xác thực OTP reset; hash password mới; lưu database
+o	login: Đăng nhập với email, mật khẩu; kiểm tra tài khoản; so sánh password; xử lý tài khoản bị cấm vĩnh viễn (trả appeal token 30 phút); tạo JWT token 7 ngày; kiểm tra login notice; dọn dẹp likes/bookmarks
+o	submitAccountAppeal: Gửi yêu cầu appeal cho tài khoản bị cấm vĩnh viễn; xác thực appeal token; kiểm tra trạng thái account; kiểm tra chưa có appeal pending; lưu appeal với lý do/bằng chứng; thông báo admin qua WebSocket
 o	logout: Đăng xuất; client xóa token; trả về thông báo thành công
 -	Content:
 o	createStory: Tạo bài viết (story) với tiêu đề, mô tả, nội dung, hashtag, trạng thái, ảnh tùy chọn; parse hashtag; upload ảnh; lưu với tác giả
 o	createArtwork: Tạo tác phẩm hình ảnh (artwork) với tiêu đề, mô tả, trạng thái, ảnh bắt buộc, hashtag; yêu cầu ít nhất 1 ảnh; parse hashtag; upload ảnh; lưu với tác giả
-o	get: Xem chi tiết nội dung (story/artwork) theo ID; kiểm tra quyền truy cập (deleted chỉ admin, draft/pending chỉ owner/admin, approved cho tất cả); tăng views; cập nhật reading history
+o	getContent: Xem chi tiết nội dung (story/artwork) theo ID; kiểm tra quyền truy cập (deleted chỉ admin, draft/pending chỉ owner/admin, approved cho tất cả); tăng views; cập nhật reading history
 o	getHomeFeed: Lấy home feed với tùy chọn sort (newest/trending), type (story/artwork/all), query, tag, pagination
-o	search: Tìm kiếm nội dung theo từ khóa, hashtag, loại; phân trang 50/trang; sắp xếp mới nhất; quyền admin xem draft/pending
-o	update: Cập nhật nội dung (tiêu đề, mô tả, hashtag, trạng thái); kiểm tra ownership; validate dữ liệu; lưu thay đổi
-o	delete: Xóa nội dung (soft delete); kiểm tra ownership; set status 'deleted'; dọn dẹp likes/bookmarks
+o	searchContent: Tìm kiếm nội dung theo từ khóa, hashtag, loại; phân trang 50/trang; sắp xếp mới nhất; quyền admin xem draft/pending
+o	updateContent: Cập nhật nội dung (tiêu đề, mô tả, hashtag, trạng thái); kiểm tra ownership; validate dữ liệu; lưu thay đổi
+o	deleteContent: Xóa nội dung (soft delete); kiểm tra ownership; set status 'deleted'; dọn dẹp likes/bookmarks
 o	getTrending: Lấy nội dung hot từ 30 ngày gần đây; tính điểm comments/(ngày+1); sắp xếp cao xuống; top 20
 o	getPopularCreators: Lấy danh sách creators phổ biến
 o	getRecommendedTags: Lấy tags được đề xuất dựa trên favorite tags của user
@@ -34,6 +41,7 @@ o	deleteComment: Xóa bình luận của chính mình; kiểm tra ownership; xó
 o	getComments: Lấy danh sách bình luận của content; sắp xếp mới nhất; kèm username/avatar
 -	Moderation:
 o	dismissReports: Bác bỏ báo cáo; set status 'approved'; xóa reports; thông báo owner
+o	getModerationAuditHistory: Lấy lịch sử audit moderation; phân trang với limit và before; sắp xếp mới nhất; trả về events
 o	banContent: Cấm nội dung; set status 'banned'; xóa reports; thông báo owner
 o	getUsersForModeration: Lấy danh sách user với số content; kèm thông tin posting restriction
 o	banUser: Cấm user tạm thời (7 ngày); lý do; kiểm tra không cấm admin/tự cấm; thông báo user
@@ -52,9 +60,17 @@ o	markAsRead: Đánh dấu notification đã đọc
 o	deleteNotification: Xóa notification; kiểm tra ownership
 -	Report:
 o	createReport: Gửi báo cáo cho content (story/artwork); kiểm tra tồn tại/chưa report; tự động pending nếu 3+ reports; lưu database
+-	Payment:
+o	createMomoSubscriptionCheckout: Tạo checkout cho subscription với MoMo; kiểm tra config, artist tồn tại, không tự subscribe; tạo payment transaction; gọi MoMo API
+o	createMomoPremiumCheckout: Tạo checkout cho premium với MoMo; kiểm tra config, plan hợp lệ; tạo payment transaction; gọi MoMo API
+o	handleMomoIpn: Xử lý IPN từ MoMo; xác thực signature, amount; cập nhật transaction status; áp dụng payment nếu thành công
+o	handleMomoReturn: Xử lý return từ MoMo; trả về thông tin đơn giản
+o	getPaymentStatus: Lấy trạng thái payment theo orderId; kiểm tra ownership; trả về thông tin transaction
+o	confirmPaymentFromReturnDev: Xác nhận payment từ return (chỉ dev); kiểm tra resultCode; áp dụng payment nếu thành công
 -	User:
 o	getProfile: Lấy thông tin user (username, email, avatar, bio); content của user (tất cả nếu owner, approved nếu khác); đếm followers/following; kiểm tra follow status
 o	updateProfile: Cập nhật username, email, bio; kiểm tra trùng; lưu database
+o	updatePhoneNumber: Cập nhật số điện thoại của user; kiểm tra trùng lặp; lưu phone record; tạo OTP và gửi SMS; cập nhật user
 o	updateAvatar: Cập nhật ảnh đại diện; upload file/URL; lưu path
 o	getFavoriteTags: Lấy danh sách favorite hashtags của user
 o	addFavoriteTag: Thêm hashtag vào danh sách favorite của user

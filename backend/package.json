@@ -22,7 +22,6 @@
   "author": "",
   "license": "ISC",
   "dependencies": {
-    "@mapbox/node-pre-gyp": "^2.0.3",
     "bcrypt": "^5.1.1",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
@@ -33,7 +32,9 @@
     "lru-cache": "^11.3.0",
     "mongoose": "^8.0.0",
     "multer": "^2.1.1",
+    "nodemailer": "^8.0.4",
     "superagent": "^10.3.0",
+    "twilio": "^5.13.1",
     "ws": "^8.14.2"
   },
   "devDependencies": {

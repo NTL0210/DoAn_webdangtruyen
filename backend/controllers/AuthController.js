@@ -1,9 +1,13 @@
 import bcrypt from 'bcrypt';
 import jwt from 'jsonwebtoken';
 import User from '../models/User.js';
+import { sendEmail } from '../services/emailService.js';
+import { sendSms } from '../services/smsService.js';
+import { createOtpForUser, verifyOtpForUser } from '../services/otpService.js';
+import Phone from '../models/Phone.js';
 import AccountAppeal from '../models/AccountAppeal.js';
 import webSocketManager from '../websocket/WebSocketManager.js';
-import { clearExpiredPostingRestriction, serializePostingRestriction } from '../utils/moderation.js';
+import { clearExpiredPostingRestriction, getPermanentBanDeletionDeadline, serializePermanentBan, serializePostingRestriction } from '../utils/moderation.js';
 import { pruneUserSavedContentReferences } from '../utils/savedContent.js';
 
 function signAppealToken(userId) {
@@ -61,9 +65,22 @@ export async function register(req, res) {
 
     await user.save();
 
+    // Create verification OTP and send to user's email
+    try {
+      const { code } = await createOtpForUser(user._id, 'verify');
+      const subject = 'Verify your email';
+      const text = `Your verification code is: ${code}. It expires in 15 minutes.`;
+      const html = `<p>Your verification code is: <strong>${code}</strong></p><p>This code expires in 15 minutes.</p>`;
+
+      await sendEmail({ to: user.email, subject, text, html });
+    } catch (emailError) {
+      // Log error but allow registration to succeed
+      console.error('[auth] Failed to send verification email:', emailError);
+    }
+
     return res.status(201).json({
       success: true,
-      message: 'User registered successfully',
+      message: 'User registered successfully. A verification code was sent to your email.',
       data: {
         userId: user._id,
         username: user.username,
@@ -79,6 +96,203 @@ export async function register(req, res) {
         message: 'An unexpected error occurred'
       }
     });
+  }
+}
+
+// Resend verification OTP
+export async function resendVerificationOtp(req, res) {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Email is required', field: 'email' } });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      // Don't reveal whether email exists
+      return res.status(200).json({ success: true, message: 'If an account exists, a verification code was sent.' });
+    }
+
+    if (user.isVerified) {
+      return res.status(400).json({ success: false, error: { code: 'ALREADY_VERIFIED', message: 'Email is already verified' } });
+    }
+
+    const { code } = await createOtpForUser(user._id, 'verify');
+    const subject = 'Verify your email';
+    const text = `Your verification code is: ${code}. It expires in 15 minutes.`;
+    const html = `<p>Your verification code is: <strong>${code}</strong></p><p>This code expires in 15 minutes.</p>`;
+
+    try {
+      await sendEmail({ to: user.email, subject, text, html });
+    } catch (emailError) {
+      console.error('[auth] Failed to send verification email:', emailError);
+    }
+
+    return res.status(200).json({ success: true, message: 'Verification code sent if the email exists.' });
+  } catch (error) {
+    console.error('resendVerificationOtp error:', error);
+    return res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' } });
+  }
+}
+
+// Resend phone verification OTP (by phone number)
+export async function resendPhoneVerification(req, res) {
+  try {
+    const { phoneNumber } = req.body;
+    if (!phoneNumber) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'phoneNumber is required', field: 'phoneNumber' } });
+    }
+
+    const normalized = String(phoneNumber).replace(/[^+\d]/g, '');
+    const user = await User.findOne({ phoneNumber: normalized });
+
+    if (!user) {
+      // Don't reveal existence
+      return res.status(200).json({ success: true, message: 'If an account exists, a verification code was sent.' });
+    }
+
+    const { code } = await createOtpForUser(user._id, 'verify');
+    const message = `Your verification code is: ${code}. It expires in 15 minutes.`;
+
+    try {
+      await sendSms({ to: normalized, body: message });
+    } catch (smsError) {
+      console.error('[auth] Failed to send verification SMS:', smsError);
+    }
+
+    return res.status(200).json({ success: true, message: 'Verification code sent if the phone exists.' });
+  } catch (error) {
+    console.error('resendPhoneVerification error:', error);
+    return res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' } });
+  }
+}
+
+// Verify phone OTP
+export async function verifyPhoneOtp(req, res) {
+  try {
+    const { phoneNumber, code } = req.body;
+    if (!phoneNumber || !code) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'phoneNumber and code are required' } });
+    }
+
+    const normalized = String(phoneNumber).replace(/[^+\d]/g, '');
+    const user = await User.findOne({ phoneNumber: normalized });
+
+    if (!user) {
+      return res.status(400).json({ success: false, error: { code: 'INVALID_REQUEST', message: 'Invalid phone number or code' } });
+    }
+
+    const ok = await verifyOtpForUser(user._id, 'verify', code);
+    if (!ok) {
+      return res.status(400).json({ success: false, error: { code: 'INVALID_CODE', message: 'Invalid or expired verification code' } });
+    }
+
+    user.phoneVerified = true;
+    await user.save();
+
+    // mark phone history as verified
+    try {
+      await Phone.updateMany({ user: user._id, normalized }, { $set: { verified: true } });
+    } catch (e) {
+      // ignore
+    }
+
+    return res.status(200).json({ success: true, message: 'Phone verified successfully' });
+  } catch (error) {
+    console.error('verifyPhoneOtp error:', error);
+    return res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' } });
+  }
+}
+
+// Verify email with OTP
+export async function verifyEmailOtp(req, res) {
+  try {
+    const { email, code } = req.body;
+    if (!email || !code) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Email and code are required' } });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ success: false, error: { code: 'INVALID_REQUEST', message: 'Invalid email or code' } });
+    }
+
+    const ok = await verifyOtpForUser(user._id, 'verify', code);
+    if (!ok) {
+      return res.status(400).json({ success: false, error: { code: 'INVALID_CODE', message: 'Invalid or expired verification code' } });
+    }
+
+    user.isVerified = true;
+    await user.save();
+
+    return res.status(200).json({ success: true, message: 'Email verified successfully' });
+  } catch (error) {
+    console.error('verifyEmailOtp error:', error);
+    return res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' } });
+  }
+}
+
+// Request password reset (send OTP)
+export async function requestPasswordReset(req, res) {
+  try {
+    const { email } = req.body;
+    if (!email) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Email is required' } });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      // Always return success to avoid leaking account existence
+      return res.status(200).json({ success: true, message: 'If an account exists, a reset code was sent.' });
+    }
+
+    const { code } = await createOtpForUser(user._id, 'reset');
+    const subject = 'Password reset code';
+    const text = `Your password reset code is: ${code}. It expires in 15 minutes.`;
+    const html = `<p>Your password reset code is: <strong>${code}</strong></p><p>This code expires in 15 minutes.</p>`;
+
+    try {
+      await sendEmail({ to: user.email, subject, text, html });
+    } catch (emailError) {
+      console.error('[auth] Failed to send password reset email:', emailError);
+    }
+
+    return res.status(200).json({ success: true, message: 'If an account exists, a reset code was sent.' });
+  } catch (error) {
+    console.error('requestPasswordReset error:', error);
+    return res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' } });
+  }
+}
+
+// Reset password using OTP
+export async function resetPasswordWithOtp(req, res) {
+  try {
+    const { email, code, newPassword } = req.body;
+    if (!email || !code || !newPassword) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Email, code and newPassword are required' } });
+    }
+
+    if (String(newPassword).length < 8) {
+      return res.status(400).json({ success: false, error: { code: 'VALIDATION_ERROR', message: 'Password must be at least 8 characters long', field: 'newPassword' } });
+    }
+
+    const user = await User.findOne({ email });
+    if (!user) {
+      return res.status(400).json({ success: false, error: { code: 'INVALID_REQUEST', message: 'Invalid email or code' } });
+    }
+
+    const ok = await verifyOtpForUser(user._id, 'reset', code);
+    if (!ok) {
+      return res.status(400).json({ success: false, error: { code: 'INVALID_CODE', message: 'Invalid or expired reset code' } });
+    }
+
+    user.password = await bcrypt.hash(newPassword, 10);
+    await user.save();
+
+    return res.status(200).json({ success: true, message: 'Password reset successfully' });
+  } catch (error) {
+    console.error('resetPasswordWithOtp error:', error);
+    return res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' } });
   }
 }
 
@@ -120,6 +334,9 @@ export async function login(req, res) {
         .sort({ updatedAt: -1, createdAt: -1 })
         .select('status appealReason evidence reviewReason reviewedAt createdAt');
 
+      const permanentBanState = serializePermanentBan(user);
+      const canSubmitAppeal = !latestAppeal || latestAppeal.status !== 'pending';
+
       return res.status(403).json({
         success: false,
         error: {
@@ -132,6 +349,11 @@ export async function login(req, res) {
           email: user.email,
           permanentBanReason: user.permanentBanReason,
           permanentlyBannedAt: user.permanentlyBannedAt,
+          permanentDeletionScheduledFor: permanentBanState.permanentDeletionScheduledFor,
+          permanentDeletionMillisecondsRemaining: permanentBanState.permanentDeletionMillisecondsRemaining,
+          permanentDeletionDaysRemaining: permanentBanState.permanentDeletionDaysRemaining,
+          isPermanentDeletionOverdue: permanentBanState.isPermanentDeletionOverdue,
+          canSubmitAppeal: canSubmitAppeal && !permanentBanState.isPermanentDeletionOverdue,
           appealToken: signAppealToken(user._id),
           latestAppeal
         }
@@ -236,6 +458,20 @@ export async function submitAccountAppeal(req, res) {
         error: {
           code: 'VALIDATION_ERROR',
           message: 'This account is not currently permanently banned'
+        }
+      });
+    }
+
+    const deletionDeadline = getPermanentBanDeletionDeadline(user);
+    if (deletionDeadline && deletionDeadline <= new Date()) {
+      return res.status(410).json({
+        success: false,
+        error: {
+          code: 'APPEAL_WINDOW_EXPIRED',
+          message: 'The 5-day appeal window has expired for this account.'
+        },
+        data: {
+          permanentDeletionScheduledFor: deletionDeadline
         }
       });
     }
