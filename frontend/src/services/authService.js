@@ -51,6 +51,17 @@ export function consumePostLoginNotice() {
   }
 }
 
+function applyAuthenticatedLogin(data) {
+  if (!data?.token || !data?.user) {
+    return;
+  }
+
+  localStorage.setItem('token', data.token);
+  setCurrentUser(data.user);
+  queuePostLoginNotice(data.loginNotice);
+  connectNotificationSocket(data.token, { reason: 'login' });
+}
+
 // Login user
 export async function login(email, password) {
   const response = await fetch(`${API_URL}/api/auth/login`, {
@@ -63,15 +74,41 @@ export async function login(email, password) {
 
   const data = await response.json();
 
-  if (data.success) {
-    // Store token in localStorage
-    localStorage.setItem('token', data.data.token);
-    setCurrentUser(data.data.user);
-    queuePostLoginNotice(data.data.loginNotice);
-    connectNotificationSocket(data.data.token, { reason: 'login' });
+  if (data.success && !data.data?.requiresTwoFactor) {
+    applyAuthenticatedLogin(data.data);
   }
 
   return data;
+}
+
+export async function verifyLoginOtp(loginToken, code) {
+  const response = await fetch(`${API_URL}/api/auth/login/verify-otp`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ loginToken, code })
+  });
+
+  const data = await response.json();
+
+  if (data.success) {
+    applyAuthenticatedLogin(data.data);
+  }
+
+  return data;
+}
+
+export async function resendLoginOtp(loginToken) {
+  const response = await fetch(`${API_URL}/api/auth/login/resend-otp`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json'
+    },
+    body: JSON.stringify({ loginToken })
+  });
+
+  return await response.json();
 }
 
 export async function submitAccountAppeal(appealToken, reason, evidence = '') {

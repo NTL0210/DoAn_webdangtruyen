@@ -1,4 +1,4 @@
-import { PenSquare, UserCircle2, House, BookOpen, Image, Bell, Shield, Bookmark } from 'lucide-react';
+import { PenSquare, UserCircle2, House, BookOpen, Image, Bell, Shield, Bookmark, LockKeyhole } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../common/Button';
@@ -46,6 +46,7 @@ export function Sidebar() {
     { to: '/home', label: 'Home', icon: House, feedRefreshKey: 'home' },
     { to: '/stories', label: 'Stories', icon: BookOpen, feedRefreshKey: 'stories' },
     { to: '/artworks', label: 'Artworks', icon: Image, feedRefreshKey: 'artworks' },
+    { to: '/memberships', label: 'Membership Feed', icon: LockKeyhole, feedRefreshKey: 'memberships' },
     { to: '/notifications', label: 'Notifications', icon: Bell, protected: true },
     { to: '/create-story', label: 'Create Story', icon: PenSquare, protected: true },
     { to: '/create-artwork', label: 'Create Artwork', icon: PenSquare, protected: true },

@@ -1,5 +1,5 @@
 import express from 'express';
-import { dismissReports, banContent, getReports, getReportDetails, openReportIncident, releaseReportIncident, getUsersForModeration, banUser, permanentlyBanUser, unbanUser, getAccountAppeals, approveAccountAppeal, rejectAccountAppeal, getModerationAuditHistory } from '../controllers/ModerationController.js';
+import { dismissReports, banContent, getReports, getReportDetails, openReportIncident, releaseReportIncident, getUsersForModeration, banUser, permanentlyBanUser, unbanUser, getAccountAppeals, approveAccountAppeal, rejectAccountAppeal } from '../controllers/ModerationController.js';
 import { authenticateToken, requireAdmin } from '../middleware/auth.js';
 
 const router = express.Router();
@@ -36,9 +36,6 @@ router.put('/users/:id/unban', authenticateToken, requireAdmin, unbanUser);
 
 // GET /api/admin/appeals - Get account appeals
 router.get('/appeals', authenticateToken, requireAdmin, getAccountAppeals);
-
-// GET /api/admin/history - Get moderation history retained for 90 days
-router.get('/history', authenticateToken, requireAdmin, getModerationAuditHistory);
 
 // PUT /api/admin/appeals/:id/approve - Approve an appeal and unban the account
 router.put('/appeals/:id/approve', authenticateToken, requireAdmin, approveAccountAppeal);

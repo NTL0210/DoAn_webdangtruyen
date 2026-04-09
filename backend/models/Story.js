@@ -47,14 +47,9 @@ const storySchema = new mongoose.Schema({
     enum: ['draft', 'pending', 'approved', 'rejected', 'deleted'],
     default: 'pending'
   },
-  hiddenByPermanentBan: {
+  isPremium: {
     type: Boolean,
     default: false
-  },
-  statusBeforePermanentBan: {
-    type: String,
-    enum: ['draft', 'pending', 'approved', 'rejected', 'deleted', null],
-    default: null
   },
   likes: {
     type: Number,
@@ -74,7 +69,6 @@ const storySchema = new mongoose.Schema({
 
 // Create indexes for faster queries
 storySchema.index({ author: 1 });
-storySchema.index({ author: 1, hiddenByPermanentBan: 1 });
 storySchema.index({ status: 1 });
 storySchema.index({ createdAt: -1 });
 storySchema.index({ tags: 1 });

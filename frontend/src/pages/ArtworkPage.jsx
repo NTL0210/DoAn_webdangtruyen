@@ -1,9 +1,10 @@
 import { useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Bookmark, Heart, MessageCircle, X } from 'lucide-react';
+import { ArrowLeft, Bookmark, Heart, MessageCircle, X, Zap } from 'lucide-react';
 import { Link, useLocation, useParams, useNavigate } from 'react-router-dom';
 import { getCurrentUser, getToken, subscribeToCurrentUserChange, updateCurrentUserCollection } from '../services/authService';
 import { invalidateContentMutationCaches } from '../services/appDataInvalidation';
 import { LazyImage } from '../components/common/LazyImage';
+import { PremiumAccessGate } from '../components/common/PremiumAccessGate';
 import { ReportContentButton } from '../components/common/ReportContentButton';
 import { subscribeToContentComments, subscribeToNotificationSocketState } from '../services/notificationService';
 import { getRoutePrefetchProps } from '../services/routePrefetch';
@@ -47,6 +48,7 @@ export default function ArtworkPage() {
   const [isViewerOpen, setIsViewerOpen] = useState(false);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
+  const [accessLock, setAccessLock] = useState(null);
   const [commentError, setCommentError] = useState('');
   const [commentTargetNotice, setCommentTargetNotice] = useState('');
   const [highlightedCommentId, setHighlightedCommentId] = useState('');
@@ -210,6 +212,7 @@ export default function ArtworkPage() {
 
   const fetchArtwork = async () => {
     try {
+      setAccessLock(null);
       const response = await fetch(`${API_URL}/api/content/${id}`, {
         headers: {
           'Authorization': `Bearer ${getToken()}`
@@ -221,6 +224,13 @@ export default function ArtworkPage() {
       if (data.success) {
         setArtwork(data.data);
       } else {
+        if (response.status === 403 && data.error?.code === 'PREMIUM_CONTENT_LOCKED') {
+          setAccessLock(data.data || null);
+          setArtwork(null);
+          setError('');
+          return;
+        }
+
         if (response.status === 410 || data.error?.code === 'CONTENT_DELETED') {
           const notification = location.state?.notification;
           navigate(buildRemovedContentLink({
@@ -261,11 +271,17 @@ export default function ArtworkPage() {
 
   const fetchComments = async () => {
     try {
-      const response = await fetch(`${API_URL}/api/content/${id}/comments`);
+      const response = await fetch(`${API_URL}/api/content/${id}/comments?type=artwork`, {
+        headers: {
+          Authorization: `Bearer ${getToken()}`
+        }
+      });
       const data = await response.json();
 
       if (data.success) {
         setComments(data.data || []);
+      } else if (response.status === 403 && data.error?.code === 'PREMIUM_CONTENT_LOCKED') {
+        setComments([]);
       }
     } catch (err) {
       console.error('Failed to load comments');
@@ -454,6 +470,19 @@ export default function ArtworkPage() {
     return <div className="p-8 text-center text-slate-300">Loading...</div>;
   }
 
+  if (accessLock) {
+    return (
+      <PremiumAccessGate
+        contentLabel="artwork"
+        contentTitle={accessLock.title}
+        artistId={accessLock.artist?.id}
+        artistUsername={accessLock.artist?.username}
+        price={accessLock.membership?.price}
+        membershipEnabled={accessLock.membership?.isEnabled}
+      />
+    );
+  }
+
   if (error || !artwork) {
     return (
       <div className="mx-auto max-w-4xl px-4 py-8">
@@ -485,17 +514,41 @@ export default function ArtworkPage() {
         <div className="detail-post-main">
           <div className="flex gap-3">
             <div className="shrink-0 pt-1">
-              {authorAvatarUrl ? (
-                <img src={authorAvatarUrl} alt={artwork.author?.username || 'Unknown'} className="feed-avatar" />
-              ) : (
-                <div className="feed-avatar-fallback">{artwork.author?.username?.[0]?.toUpperCase() || '?'}</div>
-              )}
+              <Link
+                to={`/profile/${artwork.author?._id}`}
+                {...getRoutePrefetchProps(`/profile/${artwork.author?._id}`)}
+                className="block transition hover:opacity-90"
+              >
+                {authorAvatarUrl ? (
+                  <img src={authorAvatarUrl} alt={artwork.author?.username || 'Unknown'} className="feed-avatar" />
+                ) : (
+                  <div className="feed-avatar-fallback">{artwork.author?.username?.[0]?.toUpperCase() || '?'}</div>
+                )}
+              </Link>
             </div>
 
             <div className="min-w-0 flex-1">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-                <span className="truncate font-semibold text-white">{artwork.author?.username || 'Unknown'}</span>
-                <span className="text-slate-500">@{artwork.author?.username || 'unknown'}</span>
+                <Link
+                  to={`/profile/${artwork.author?._id}`}
+                  {...getRoutePrefetchProps(`/profile/${artwork.author?._id}`)}
+                  className="truncate font-semibold text-white transition hover:text-cyan-200"
+                >
+                  {artwork.author?.username || 'Unknown'}
+                </Link>
+                {artwork.author?.creatorPlan === 'premium_artist' && (
+                  <div className="flex items-center gap-1 rounded-full bg-amber-500/20 px-2 py-0.5 border border-amber-500/40">
+                    <Zap size={12} className="text-amber-400" fill="currentColor" />
+                    <span className="text-xs font-semibold text-amber-300">Premium</span>
+                  </div>
+                )}
+                <Link
+                  to={`/profile/${artwork.author?._id}`}
+                  {...getRoutePrefetchProps(`/profile/${artwork.author?._id}`)}
+                  className="text-slate-500 transition hover:text-cyan-200"
+                >
+                  @{artwork.author?.username || 'unknown'}
+                </Link>
                 <span className="text-slate-600">·</span>
                 <span className="text-slate-500">{formatRelative(artwork.createdAt)}</span>
               </div>

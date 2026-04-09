@@ -344,6 +344,7 @@ export default function SearchPage() {
           };
   const currentTagPostVolume = tagDirectory.reduce((total, tag) => total + (tag.contentCount || 0), 0);
   const currentTagCreatorReach = tagDirectory.reduce((total, tag) => total + (tag.creatorCount || 0), 0);
+  const totalTagsInDirectory = tagSummary?.totalTags || 0;
   const strongestTag = tagDirectory.reduce((best, tag) => {
     if (!best || (tag.contentCount || 0) > (best.contentCount || 0)) {
       return tag;
@@ -651,7 +652,7 @@ export default function SearchPage() {
           ) : tagDirectory.length ? (
             <div className="space-y-6">
               <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
-                <TagStatCard label="Tags on this page" value={tagDirectory.length} hint="Current slice of the hashtag directory." />
+                <TagStatCard label="Tags in directory" value={totalTagsInDirectory} hint="Total hashtags across all approved content." />
                 <TagStatCard label="Post volume" value={currentTagPostVolume} hint="Approved posts covered by the visible tags." />
                 <TagStatCard label="Creator reach" value={currentTagCreatorReach} hint="Combined creator usage across visible tags." />
                 <TagStatCard

@@ -8,7 +8,8 @@ const FEED_TAB_SLIDE_MS = 220;
 const FEED_TABS = [
   { key: 'home', label: 'For you', to: '/home' },
   { key: 'stories', label: 'Stories', to: '/stories' },
-  { key: 'artworks', label: 'Artwork', to: '/artworks' }
+  { key: 'artworks', label: 'Artwork', to: '/artworks' },
+  { key: 'memberships', label: 'Membership', to: '/memberships' }
 ];
 
 function getAvatarUrl(avatar) {

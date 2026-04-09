@@ -2,9 +2,12 @@ export const routeModuleLoaders = {
   splash: () => import('../pages/SplashScreen'),
   login: () => import('../pages/LoginPage'),
   register: () => import('../pages/RegisterPage'),
+  forgotPassword: () => import('../pages/ForgotPasswordPage'),
+  momoReturn: () => import('../pages/MoMoReturnPage'),
   home: () => import('../pages/HomePage'),
   stories: () => import('../pages/StoriesPage'),
   artworks: () => import('../pages/ArtworksPage'),
+  memberships: () => import('../pages/MembershipPostsPage'),
   saved: () => import('../pages/SavedPage'),
   search: () => import('../pages/SearchPage'),
   notifications: () => import('../pages/NotificationPage'),
@@ -14,6 +17,8 @@ export const routeModuleLoaders = {
   story: () => import('../pages/StoryPage'),
   artwork: () => import('../pages/ArtworkPage'),
   profile: () => import('../pages/ProfilePage'),
+  premium: () => import('../pages/PremiumPage'),
+  artistMembership: () => import('../pages/ArtistMembershipPage'),
   admin: () => import('../pages/AdminPage')
 };
 
@@ -21,9 +26,12 @@ const routeToModule = {
   '/splash': 'splash',
   '/login': 'login',
   '/register': 'register',
+  '/forgot-password': 'forgotPassword',
+  '/payment/momo/return': 'momoReturn',
   '/home': 'home',
   '/stories': 'stories',
   '/artworks': 'artworks',
+  '/memberships': 'memberships',
   '/saved': 'saved',
   '/search': 'search',
   '/notifications': 'notifications',
@@ -31,6 +39,8 @@ const routeToModule = {
   '/create-story': 'createStory',
   '/create-artwork': 'createArtwork',
   '/profile': 'profile',
+  '/premium': 'premium',
+  '/membership': 'artistMembership',
   '/admin': 'admin'
 };
 
@@ -95,6 +105,10 @@ function normalizeRoutePath(path) {
 
   if (pathname.startsWith('/profile/')) {
     return '/profile';
+  }
+
+  if (pathname.startsWith('/membership/')) {
+    return '/membership';
   }
 
   if (pathname.startsWith('/story/')) {

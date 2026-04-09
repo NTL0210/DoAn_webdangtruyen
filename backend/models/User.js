@@ -25,6 +25,18 @@ const userSchema = new mongoose.Schema({
     type: String,
     default: null
   },
+  phoneNumber: {
+    type: String,
+    trim: true,
+    lowercase: false,
+    unique: true,
+    sparse: true,
+    default: null
+  },
+  phoneVerified: {
+    type: Boolean,
+    default: false
+  },
   bio: {
     type: String,
     trim: true,
@@ -36,7 +48,55 @@ const userSchema = new mongoose.Schema({
     enum: ['user', 'admin'],
     default: 'user'
   },
+  creatorPlan: {
+    type: String,
+    enum: ['standard', 'premium_artist'],
+    default: 'standard'
+  },
+  premiumStatus: {
+    type: String,
+    enum: ['inactive', 'active', 'expired'],
+    default: 'inactive'
+  },
+  premiumStartedAt: {
+    type: Date,
+    default: null
+  },
+  premiumExpiresAt: {
+    type: Date,
+    default: null
+  },
+  subscriptionEnabled: {
+    type: Boolean,
+    default: true
+  },
+  subscriptionPrice: {
+    type: Number,
+    default: 0,
+    min: 0
+  },
+  membershipTitle: {
+    type: String,
+    trim: true,
+    maxlength: 80,
+    default: 'Artist Membership'
+  },
+  membershipDescription: {
+    type: String,
+    trim: true,
+    maxlength: 500,
+    default: ''
+  },
+  membershipBenefits: [{
+    type: String,
+    trim: true,
+    maxlength: 120
+  }],
   isVerified: {
+    type: Boolean,
+    default: false
+  },
+  twoFactorEnabled: {
     type: Boolean,
     default: false
   },
@@ -128,7 +188,6 @@ const userSchema = new mongoose.Schema({
 });
 
 // Indexes are already created by unique: true, no need to add them again
-userSchema.index({ accountStatus: 1, permanentlyBannedAt: 1 });
 
 userSchema.pre('save', function setSearchFields(next) {
   if (this.isModified('username') || !this.searchName) {

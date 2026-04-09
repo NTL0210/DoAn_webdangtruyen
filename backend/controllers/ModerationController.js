@@ -113,6 +113,29 @@ export async function dismissReports(req, res) {
   }
 }
 
+export async function getModerationAuditHistory(req, res) {
+  try {
+    const limitParam = parseInt(req.query.limit, 10) || 50;
+    const limit = Math.min(limitParam, MAX_REPORT_DETAILS_LIMIT);
+    const beforeId = String(req.query.before || '').trim();
+    const query = {};
+
+    if (beforeId && mongoose.Types.ObjectId.isValid(beforeId)) {
+      query._id = { $lt: mongoose.Types.ObjectId(beforeId) };
+    }
+
+    const events = await ModerationAuditLog.find(query)
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    return res.status(200).json({ success: true, data: events, message: 'Moderation audit history loaded' });
+  } catch (error) {
+    console.error('Get moderation audit history error:', error);
+    return res.status(500).json({ success: false, error: { code: 'INTERNAL_ERROR', message: 'An unexpected error occurred' } });
+  }
+}
+
 // Ban content after reviewing reports
 export async function banContent(req, res) {
   try {
@@ -230,7 +253,6 @@ export async function getUsersForModeration(req, res) {
         lastModeratedAt: user.lastModeratedAt,
         storyCount: storyCountMap.get(String(user._id)) || 0,
         artworkCount: artworkCountMap.get(String(user._id)) || 0,
-        ...serializePermanentBan(user),
         ...serializePostingRestriction(user)
       })),
       message: 'Users loaded successfully'
@@ -408,8 +430,8 @@ export async function permanentlyBanUser(req, res) {
       targetUser: user,
       reason,
       metadata: {
-        hiddenStories: hiddenContent.hiddenStories,
-        hiddenArtworks: hiddenContent.hiddenArtworks,
+        hiddenStories: hiddenContent?.hiddenStories || [],
+        hiddenArtworks: hiddenContent?.hiddenArtworks || [],
         permanentDeletionScheduledFor: getPermanentBanDeletionDeadline(user)
       }
     });
@@ -420,7 +442,7 @@ export async function permanentlyBanUser(req, res) {
       from: req.user.userId,
       contentId: null,
       contentType: null,
-      message: `Your account has been permanently banned. Reason: ${reason}. You have 5 days to submit an appeal before the account and related data are permanently deleted.`
+      message: `Your account has been permanently banned. Reason: ${reason}. You can sign in to review the decision and submit an appeal to the admin team.`
     });
 
     return res.status(200).json({
@@ -431,7 +453,6 @@ export async function permanentlyBanUser(req, res) {
         accountStatus: user.accountStatus,
         permanentBanReason: user.permanentBanReason,
         permanentlyBannedAt: user.permanentlyBannedAt,
-        ...serializePermanentBan(user),
         ...serializePostingRestriction(user)
       }
     });
@@ -477,16 +498,14 @@ export async function unbanUser(req, res) {
     const actorUsername = await getActorUsername(req.user.userId);
     const restoredContent = await restoreUserContentAfterPermanentBan(user._id);
 
-    if (user.accountStatus === 'active') {
-      await recordModerationAuditEvent({
-        actionType: 'account-restored',
-        actorUserId: req.user.userId,
-        actorUsername,
-        targetUser: user,
-        reason: 'Manual admin restore',
-        metadata: restoredContent
-      });
-    }
+    await recordModerationAuditEvent({
+      actionType: 'account-restored',
+      actorUserId: req.user.userId,
+      actorUsername,
+      targetUser: user,
+      reason: 'Manual admin restore',
+      metadata: restoredContent
+    });
 
     await webSocketManager.sendNotification(user._id, {
       recipient: user._id,
@@ -502,7 +521,6 @@ export async function unbanUser(req, res) {
       message: 'User restriction cleared successfully',
       data: {
         _id: user._id,
-        ...serializePermanentBan(user),
         ...serializePostingRestriction(user)
       }
     });
@@ -700,29 +718,6 @@ export async function rejectAccountAppeal(req, res) {
     });
   } catch (error) {
     console.error('Reject appeal error:', error);
-    return res.status(500).json({
-      success: false,
-      error: {
-        code: 'INTERNAL_ERROR',
-        message: 'An unexpected error occurred'
-      }
-    });
-  }
-}
-
-export async function getModerationAuditHistory(req, res) {
-  try {
-    const history = await ModerationAuditLog.find()
-      .sort({ createdAt: -1 })
-      .limit(120);
-
-    return res.status(200).json({
-      success: true,
-      data: history,
-      message: 'Moderation history loaded successfully'
-    });
-  } catch (error) {
-    console.error('Get moderation audit history error:', error);
     return res.status(500).json({
       success: false,
       error: {

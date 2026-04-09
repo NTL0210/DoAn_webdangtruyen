@@ -1,9 +1,10 @@
-import { Bookmark, Heart } from 'lucide-react';
+import { Bookmark, Crown, Heart } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { getCurrentUser, getToken, setCurrentUser, subscribeToCurrentUserChange, updateCurrentUserCollection } from '../services/authService';
 import { invalidateContentMutationCaches, invalidateCreatorPresentationCaches } from '../services/appDataInvalidation';
 import { emitCreatorPresentationRefresh } from '../services/creatorPresentationEvents';
+import { PremiumPromptBanner } from '../components/common/PremiumPromptBanner';
 import { fetchJsonWithCache, FRONTEND_CACHE_NAMESPACES, getFrontendCacheScope, invalidateFrontendCache } from '../services/frontendCache';
 import { getRoutePrefetchProps } from '../services/routePrefetch';
 import { formatCount, formatRelative } from '../utils/helpers';
@@ -26,20 +27,66 @@ export default function ProfilePage() {
   const [error, setError] = useState('');
   const [uploadingAvatar, setUploadingAvatar] = useState(false);
   const [savingProfile, setSavingProfile] = useState(false);
+  const [savingTwoFactor, setSavingTwoFactor] = useState(false);
+  const [twoFactorFeedback, setTwoFactorFeedback] = useState('');
   const [followers, setFollowers] = useState([]);
   const [followingList, setFollowingList] = useState([]);
   const [history, setHistory] = useState([]);
+  const [membershipOffer, setMembershipOffer] = useState({ isAvailable: false, isEnabled: false, price: 0, durationDays: 30 });
+  const [viewerMembership, setViewerMembership] = useState({ isSubscribed: false, expiresAt: null, subscriptionId: null });
+  const [viewerCanAccessPremium, setViewerCanAccessPremium] = useState(false);
+  const [contentVisibilityFilter, setContentVisibilityFilter] = useState('all');
   const [relationView, setRelationView] = useState('');
   const [authUser, setAuthUser] = useState(() => getCurrentUser());
   const [pendingInteractionKey, setPendingInteractionKey] = useState('');
   const [profileForm, setProfileForm] = useState({
     username: '',
     email: '',
-    bio: ''
+    bio: '',
+    twoFactorEnabled: false,
+    subscriptionEnabled: true,
+    subscriptionPrice: '0',
+    membershipTitle: 'Artist Membership',
+    membershipDescription: '',
+    membershipBenefitsText: ''
   });
   const likedIds = Array.isArray(authUser?.likes) ? authUser.likes.map((value) => String(value)) : [];
   const bookmarkedIds = Array.isArray(authUser?.bookmarks) ? authUser.bookmarks.map((value) => String(value)) : [];
   const profileCacheScope = getFrontendCacheScope(authUser?.id || authUser?._id);
+  const premiumExpiresAt = profile?.premiumExpiresAt ? new Date(profile.premiumExpiresAt) : null;
+  const membershipExpiresAt = viewerMembership?.expiresAt ? new Date(viewerMembership.expiresAt) : null;
+  const isPremiumActive = profile?.creatorPlan === 'premium_artist'
+    && profile?.premiumStatus === 'active'
+    && premiumExpiresAt
+    && premiumExpiresAt > new Date();
+
+  const syncProfileState = (updatedUser, previousForm = null) => {
+    setProfile(updatedUser);
+    setProfileForm((prev) => {
+      const base = previousForm || prev;
+      return {
+        ...base,
+        username: updatedUser.username ?? base.username,
+        email: updatedUser.email ?? base.email,
+        bio: updatedUser.bio ?? base.bio,
+        twoFactorEnabled: updatedUser.twoFactorEnabled === true,
+        subscriptionEnabled: updatedUser.subscriptionEnabled ?? base.subscriptionEnabled,
+        subscriptionPrice: String(updatedUser.subscriptionPrice ?? base.subscriptionPrice),
+        membershipTitle: updatedUser.membershipTitle || base.membershipTitle,
+        membershipDescription: updatedUser.membershipDescription || base.membershipDescription,
+        membershipBenefitsText: Array.isArray(updatedUser.membershipBenefits)
+          ? updatedUser.membershipBenefits.join('\n')
+          : base.membershipBenefitsText
+      };
+    });
+    setCurrentUser({
+      ...(getCurrentUser() || {}),
+      ...updatedUser,
+      id: updatedUser._id || getCurrentUser()?.id
+    });
+    emitCreatorPresentationRefresh(updatedUser);
+    invalidateCreatorPresentationCaches();
+  };
 
   useEffect(() => subscribeToCurrentUserChange(setAuthUser), []);
 
@@ -85,8 +132,17 @@ export default function ProfilePage() {
       }
 
       setProfile(data.data.user);
+      if (isOwnProfile) {
+        setCurrentUser({
+          ...(getCurrentUser() || {}),
+          ...data.data.user
+        });
+      }
       setContent(data.data.content || []);
       setIsFollowing(data.data.isFollowing || false);
+      setMembershipOffer(data.data.membershipOffer || { isAvailable: false, isEnabled: false, price: 0, durationDays: 30 });
+      setViewerMembership(data.data.viewerMembership || { isSubscribed: false, expiresAt: null, subscriptionId: null });
+      setViewerCanAccessPremium(data.data.viewerCanAccessPremium === true);
       setStats({
         followerCount: data.data.followerCount || 0,
         followingCount: data.data.followingCount || 0
@@ -94,7 +150,15 @@ export default function ProfilePage() {
       setProfileForm({
         username: data.data.user.username || '',
         email: data.data.user.email || '',
-        bio: data.data.user.bio || ''
+        bio: data.data.user.bio || '',
+        twoFactorEnabled: data.data.user.twoFactorEnabled === true,
+        subscriptionEnabled: data.data.user.subscriptionEnabled ?? true,
+        subscriptionPrice: String(data.data.user.subscriptionPrice ?? 0),
+        membershipTitle: data.data.user.membershipTitle || 'Artist Membership',
+        membershipDescription: data.data.user.membershipDescription || '',
+        membershipBenefitsText: Array.isArray(data.data.user.membershipBenefits)
+          ? data.data.user.membershipBenefits.join('\n')
+          : ''
       });
       setError('');
     } catch (err) {
@@ -248,15 +312,7 @@ export default function ProfilePage() {
         return;
       }
 
-      setProfile(data.data);
-      setProfileForm((prev) => ({ ...prev, username: data.data.username, email: data.data.email, bio: data.data.bio || '' }));
-      setCurrentUser({
-        ...currentUser,
-        ...data.data,
-        id: data.data._id || currentUser?.id
-      });
-      emitCreatorPresentationRefresh(data.data);
-      invalidateCreatorPresentationCaches();
+      syncProfileState(data.data);
     } catch (err) {
       setError('An error occurred while uploading avatar');
     } finally {
@@ -269,15 +325,31 @@ export default function ProfilePage() {
     event.preventDefault();
     setSavingProfile(true);
     setError('');
+    setTwoFactorFeedback('');
 
     try {
+      const payload = {
+        username: profileForm.username,
+        email: profileForm.email,
+        bio: profileForm.bio,
+        twoFactorEnabled: profileForm.twoFactorEnabled
+      };
+
+      if (profile?.creatorPlan === 'premium_artist') {
+        payload.subscriptionEnabled = profileForm.subscriptionEnabled;
+        payload.subscriptionPrice = Number.parseInt(profileForm.subscriptionPrice || '0', 10) || 0;
+        payload.membershipTitle = profileForm.membershipTitle;
+        payload.membershipDescription = profileForm.membershipDescription;
+        payload.membershipBenefits = profileForm.membershipBenefitsText;
+      }
+
       const response = await fetch(`${API_URL}/api/users/profile`, {
         method: 'PUT',
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${getToken()}`
         },
-        body: JSON.stringify(profileForm)
+        body: JSON.stringify(payload)
       });
 
       const data = await response.json();
@@ -287,18 +359,68 @@ export default function ProfilePage() {
         return;
       }
 
-      setProfile(data.data);
-      setCurrentUser({
-        ...currentUser,
-        ...data.data,
-        id: data.data._id || currentUser?.id
-      });
-      emitCreatorPresentationRefresh(data.data);
-      invalidateCreatorPresentationCaches();
+      syncProfileState(data.data);
     } catch (err) {
       setError('Failed to update profile');
     } finally {
       setSavingProfile(false);
+    }
+  };
+
+  const handleTwoFactorToggle = async () => {
+    if (savingTwoFactor || savingProfile) {
+      return;
+    }
+
+    const previousValue = profileForm.twoFactorEnabled;
+    const nextValue = !previousValue;
+
+    setProfileForm((prev) => ({
+      ...prev,
+      twoFactorEnabled: nextValue
+    }));
+    setSavingTwoFactor(true);
+    setTwoFactorFeedback(nextValue ? 'Enabling two-step verification...' : 'Disabling two-step verification...');
+    setError('');
+
+    try {
+      const response = await fetch(`${API_URL}/api/users/profile`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${getToken()}`
+        },
+        body: JSON.stringify({
+          twoFactorEnabled: nextValue
+        })
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        setProfileForm((prev) => ({
+          ...prev,
+          twoFactorEnabled: previousValue
+        }));
+        setError(data.error?.message || 'Failed to update security setting');
+        setTwoFactorFeedback('');
+        return;
+      }
+
+      syncProfileState(data.data, {
+        ...profileForm,
+        twoFactorEnabled: nextValue
+      });
+      setTwoFactorFeedback(nextValue ? 'Two-step verification was enabled and saved.' : 'Two-step verification was disabled and saved.');
+    } catch (err) {
+      setProfileForm((prev) => ({
+        ...prev,
+        twoFactorEnabled: previousValue
+      }));
+      setError('Failed to update security setting');
+      setTwoFactorFeedback('');
+    } finally {
+      setSavingTwoFactor(false);
     }
   };
 
@@ -367,6 +489,20 @@ export default function ProfilePage() {
   }
 
   const relationData = relationView === 'followers' ? followers : followingList;
+  const publicContent = content.filter((item) => item.isPremium !== true);
+  const premiumContent = content.filter((item) => item.isPremium === true);
+  const shouldShowPremiumFilter = isOwnProfile || viewerCanAccessPremium || premiumContent.length > 0;
+  const filteredContent = content.filter((item) => {
+    if (contentVisibilityFilter === 'public') {
+      return item.isPremium !== true;
+    }
+
+    if (contentVisibilityFilter === 'premium') {
+      return item.isPremium === true;
+    }
+
+    return true;
+  });
 
   return (
     <div className="detail-shell max-w-7xl">
@@ -410,7 +546,15 @@ export default function ProfilePage() {
             <div className="flex-1 space-y-3">
               <div>
                 <p className="detail-eyebrow">Profile detail</p>
-                <h1 className="detail-title mt-2">{profile?.username}</h1>
+                <div className="mt-2 flex flex-wrap items-center gap-3">
+                  <h1 className="detail-title">{profile?.username}</h1>
+                  {isPremiumActive ? (
+                    <span className="inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">
+                      <Crown className="h-3.5 w-3.5" />
+                      Premium Artist
+                    </span>
+                  ) : null}
+                </div>
                 <p className="text-slate-400">{profile?.email}</p>
               </div>
 
@@ -432,6 +576,46 @@ export default function ProfilePage() {
                   </span>
                 ) : null}
               </div>
+
+              {!isOwnProfile && isPremiumActive ? (
+                <div className="mt-4 rounded-[1.4rem] border border-amber-500/25 bg-amber-500/10 p-4 text-sm text-slate-200">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div>
+                      <div className="text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">Artist membership</div>
+                      <p className="mt-2 text-sm leading-6 text-slate-300">
+                        {membershipOffer?.description || 'Join this artist to unlock only their members-only posts. Premium posts from other artists still require separate memberships.'}
+                      </p>
+                    </div>
+                    <div className="flex flex-col gap-3 sm:items-end">
+                      <div className="rounded-full border border-amber-400/20 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">
+                        {membershipOffer?.title || 'Artist Membership'}
+                      </div>
+                      <div className="rounded-full border border-white/10 bg-white/5 px-3 py-1 text-xs font-medium text-white">
+                        {new Intl.NumberFormat('vi-VN').format(membershipOffer?.price || 0)}₫ / {membershipOffer?.durationDays || 30} days
+                      </div>
+                      {viewerMembership?.isSubscribed ? (
+                        <Link
+                          to={`/membership/${resolvedUserId}`}
+                          className="inline-flex items-center justify-center rounded-2xl border border-emerald-400/25 bg-emerald-500/10 px-5 py-3 text-sm font-medium text-emerald-200 transition hover:bg-emerald-500/18"
+                        >
+                          Active member until {membershipExpiresAt?.toLocaleDateString()}
+                        </Link>
+                      ) : membershipOffer?.isAvailable ? (
+                        <Link
+                          to={`/membership/${resolvedUserId}`}
+                          className="inline-flex items-center justify-center rounded-2xl border border-amber-400/35 bg-amber-500/20 px-5 py-3 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/28"
+                        >
+                          Join membership
+                        </Link>
+                      ) : (
+                        <div className="rounded-2xl border border-slate-700 bg-slate-900/70 px-4 py-3 text-xs text-slate-400">
+                          Membership is not purchasable right now.
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              ) : null}
             </div>
           </div>
 
@@ -461,10 +645,103 @@ export default function ProfilePage() {
             {error}
           </div>
         ) : null}
+
+        {isOwnProfile && isPremiumActive ? (
+          <div className="mt-6 rounded-[1.75rem] border border-emerald-400/20 bg-gradient-to-br from-emerald-500/12 via-slate-950 to-slate-950 p-5 shadow-[0_20px_50px_rgba(16,185,129,0.12)]">
+            <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+              <div>
+                <div className="inline-flex items-center gap-2 rounded-full border border-emerald-400/20 bg-emerald-500/10 px-3 py-1 text-[11px] font-semibold uppercase tracking-[0.2em] text-emerald-200">
+                  <Crown className="h-3.5 w-3.5" />
+                  Premium active
+                </div>
+                <h3 className="mt-3 text-xl font-semibold text-white">Your premium creator account is live.</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-300">
+                  You can now publish public posts or members-only posts from both Story and Artwork editors.
+                </p>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/5 px-4 py-3 text-sm text-slate-200">
+                <div className="text-xs uppercase tracking-[0.18em] text-slate-400">Active until</div>
+                <div className="mt-1 font-semibold text-white">{premiumExpiresAt?.toLocaleDateString()}</div>
+              </div>
+            </div>
+          </div>
+        ) : null}
+
+        {isOwnProfile && !isPremiumActive && (
+          <div className="mt-6">
+            <PremiumPromptBanner variant="profile" />
+          </div>
+        )}
       </div>
 
       {isOwnProfile ? (
-        <form onSubmit={handleProfileSubmit} className="detail-card p-6">
+        <>
+          <section className="detail-card p-6">
+            <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+              <div>
+                <p className="detail-eyebrow">Account security</p>
+                <h2 className="mt-2 text-xl font-semibold text-white">Two-step verification</h2>
+                <p className="mt-3 max-w-2xl text-sm leading-6 text-slate-300">
+                  Turn on OTP verification for login. After entering the correct password, the system will open a confirmation popup and send a 6-digit code to your email.
+                </p>
+              </div>
+
+              <div className="flex w-full max-w-[22rem] flex-col gap-3 lg:items-end">
+                <div className={`inline-flex rounded-full border px-3 py-1 text-xs font-semibold uppercase tracking-[0.18em] ${
+                  profileForm.twoFactorEnabled
+                    ? 'border-cyan-400/30 bg-cyan-500/10 text-cyan-200'
+                    : 'border-slate-700 bg-slate-900 text-slate-400'
+                }`}>
+                  {profileForm.twoFactorEnabled ? 'OTP required on login' : 'Password-only login'}
+                </div>
+                <div className="flex w-full flex-col gap-3 sm:flex-row lg:justify-end">
+                  <button
+                    type="button"
+                    onClick={handleTwoFactorToggle}
+                    disabled={savingTwoFactor || savingProfile}
+                    className={`inline-flex min-w-[10.5rem] items-center justify-center rounded-2xl border px-5 py-2.5 text-sm font-medium transition ${
+                      profileForm.twoFactorEnabled
+                        ? 'border-cyan-400/30 bg-cyan-500/10 text-cyan-200 hover:bg-cyan-500/18'
+                        : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500 hover:bg-slate-800'
+                    } disabled:cursor-not-allowed disabled:opacity-60`}
+                  >
+                    {savingTwoFactor
+                      ? profileForm.twoFactorEnabled
+                        ? 'Saving enabled state...'
+                        : 'Saving disabled state...'
+                      : profileForm.twoFactorEnabled
+                        ? 'Disable 2FA'
+                        : 'Enable 2FA'}
+                  </button>
+                  <div className="inline-flex min-w-[10.5rem] items-center justify-center rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-2.5 text-sm text-slate-300">
+                    Auto-saves instantly
+                  </div>
+                </div>
+                {twoFactorFeedback ? (
+                  <p className="w-full text-sm text-cyan-200 lg:text-right">
+                    {twoFactorFeedback}
+                  </p>
+                ) : (
+                  <p className="w-full text-sm text-slate-400 lg:text-right">
+                    Changes here are saved immediately. You do not need to press Save All Changes.
+                  </p>
+                )}
+              </div>
+            </div>
+
+            <div className="mt-5 grid gap-4 lg:grid-cols-[1fr_auto]">
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 text-sm text-slate-300">
+                <div className="text-xs uppercase tracking-[0.16em] text-slate-400">Delivery email</div>
+                <div className="mt-2 font-medium text-white">{profileForm.email || 'Add an email to use email OTP login verification.'}</div>
+              </div>
+              <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 text-sm text-slate-300">
+                <div className="text-xs uppercase tracking-[0.16em] text-slate-400">Visibility</div>
+                <div className="mt-2 text-slate-300">The login popup hides your email and only shows the last 3 characters before the domain.</div>
+              </div>
+            </div>
+          </section>
+
+          <form id="profile-settings-form" onSubmit={handleProfileSubmit} className="detail-card p-6">
           <div className="flex items-center justify-between">
             <h2 className="text-xl font-semibold text-white">Edit Profile</h2>
             <button
@@ -472,7 +749,7 @@ export default function ProfilePage() {
               disabled={savingProfile}
               className="inline-flex items-center justify-center rounded-2xl bg-brand px-5 py-2.5 text-sm font-medium text-white transition hover:bg-brand-light disabled:cursor-not-allowed disabled:opacity-60"
             >
-              {savingProfile ? 'Saving...' : 'Save Profile'}
+              {savingProfile ? 'Saving...' : 'Save All Changes'}
             </button>
           </div>
 
@@ -509,8 +786,132 @@ export default function ProfilePage() {
                 placeholder="Tell people about yourself..."
               />
             </div>
+
+            {profile?.creatorPlan === 'premium_artist' ? (
+              <div className="lg:col-span-2 rounded-[1.5rem] border border-amber-500/20 bg-gradient-to-br from-amber-500/10 via-slate-950 to-slate-950 p-5">
+                <div className="flex flex-col gap-5 lg:flex-row lg:items-start lg:justify-between">
+                  <div>
+                    <div className="text-sm font-semibold uppercase tracking-[0.18em] text-amber-200">Membership settings</div>
+                    <p className="mt-2 max-w-2xl text-sm leading-6 text-slate-300">
+                      Control whether users can buy access to your members-only posts, set the monthly price, and customize how your plan is presented.
+                    </p>
+                  </div>
+
+                  <button
+                    type="button"
+                    onClick={() => setProfileForm((prev) => ({
+                      ...prev,
+                      subscriptionEnabled: !prev.subscriptionEnabled
+                    }))}
+                    className={`inline-flex items-center justify-center rounded-full border px-4 py-2 text-sm font-medium transition ${
+                      profileForm.subscriptionEnabled
+                        ? 'border-emerald-400/30 bg-emerald-500/10 text-emerald-200 hover:bg-emerald-500/18'
+                        : 'border-slate-700 bg-slate-900 text-slate-300 hover:border-slate-500 hover:bg-slate-800'
+                    }`}
+                  >
+                    {profileForm.subscriptionEnabled ? 'Membership open' : 'Membership paused'}
+                  </button>
+                </div>
+
+                <div className="mt-5 grid gap-5 lg:grid-cols-2">
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-300">Monthly price (VND)</label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="1000"
+                      value={profileForm.subscriptionPrice}
+                      onChange={(event) => setProfileForm((prev) => ({
+                        ...prev,
+                        subscriptionPrice: event.target.value
+                      }))}
+                      className="input-base"
+                      placeholder="99000"
+                    />
+                  </div>
+                  <div>
+                    <label className="mb-2 block text-sm font-medium text-slate-300">Plan title</label>
+                    <input
+                      type="text"
+                      maxLength={80}
+                      value={profileForm.membershipTitle}
+                      onChange={(event) => setProfileForm((prev) => ({
+                        ...prev,
+                        membershipTitle: event.target.value
+                      }))}
+                      className="input-base"
+                      placeholder="Artist Membership"
+                    />
+                  </div>
+                  <div className="lg:col-span-2">
+                    <label className="mb-2 block text-sm font-medium text-slate-300">Plan description</label>
+                    <textarea
+                      value={profileForm.membershipDescription}
+                      onChange={(event) => setProfileForm((prev) => ({
+                        ...prev,
+                        membershipDescription: event.target.value
+                      }))}
+                      className="input-base resize-none"
+                      rows={3}
+                      maxLength={500}
+                      placeholder="Tell followers what this membership unlocks and why it is worth joining."
+                    />
+                  </div>
+                  <div className="lg:col-span-2">
+                    <label className="mb-2 block text-sm font-medium text-slate-300">Benefits list</label>
+                    <textarea
+                      value={profileForm.membershipBenefitsText}
+                      onChange={(event) => setProfileForm((prev) => ({
+                        ...prev,
+                        membershipBenefitsText: event.target.value
+                      }))}
+                      className="input-base resize-none"
+                      rows={4}
+                      placeholder={"Premium stories\nPremium artworks\nBehind-the-scenes posts"}
+                    />
+                    <p className="mt-2 text-xs text-slate-400">One benefit per line, up to 8 lines.</p>
+                  </div>
+                  <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 text-sm text-slate-300">
+                    <div className="text-xs uppercase tracking-[0.16em] text-slate-400">Preview</div>
+                    <div className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">
+                      {profileForm.membershipTitle || 'Artist Membership'}
+                    </div>
+                    <div className="mt-2 text-lg font-semibold text-white">
+                      {new Intl.NumberFormat('vi-VN').format(Number(profileForm.subscriptionPrice || 0))}₫ / 30 days
+                    </div>
+                    <p className="mt-2 leading-6 text-slate-300">
+                      {profileForm.membershipDescription || 'Describe what users unlock when they join your membership.'}
+                    </p>
+                    {(profileForm.membershipBenefitsText || '').trim() ? (
+                      <div className="mt-3 space-y-2">
+                        {profileForm.membershipBenefitsText.split(/\r?\n/).filter(Boolean).slice(0, 4).map((benefit) => (
+                          <div key={benefit} className="text-xs text-slate-400">• {benefit}</div>
+                        ))}
+                      </div>
+                    ) : null}
+                    <p className="mt-2 leading-6 text-slate-400">
+                      Users who buy this membership can unlock only your premium stories and artworks. Other artists remain separately locked.
+                    </p>
+                  </div>
+                </div>
+
+                <div className="mt-5 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 sm:flex-row sm:items-center sm:justify-between">
+                  <p className="text-sm text-slate-300">
+                    Membership settings are saved together with your profile changes.
+                  </p>
+                  <button
+                    type="submit"
+                    disabled={savingProfile}
+                    className="inline-flex items-center justify-center rounded-2xl border border-amber-400/35 bg-amber-500/20 px-5 py-3 text-sm font-semibold text-amber-100 transition hover:bg-amber-500/28 disabled:cursor-not-allowed disabled:opacity-60"
+                  >
+                    {savingProfile ? 'Saving membership...' : 'Save Membership Settings'}
+                  </button>
+                </div>
+              </div>
+            ) : null}
           </div>
-        </form>
+          </form>
+        </>
       ) : null}
 
       <section className="detail-card p-6">
@@ -615,18 +1016,56 @@ export default function ProfilePage() {
         <div className="mb-6 flex flex-col gap-2 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="detail-eyebrow">Published archive</p>
-            <h2 className="mt-2 text-2xl font-semibold text-white">Content ({content.length})</h2>
+            <h2 className="mt-2 text-2xl font-semibold text-white">Content ({filteredContent.length})</h2>
+            <p className="mt-2 text-sm text-slate-400">
+              {isOwnProfile
+                ? 'Filter your archive by public and members-only posts.'
+                : viewerCanAccessPremium
+                  ? 'Your membership unlocks this artist’s premium posts here on their profile.'
+                  : 'Browse this artist’s public posts here. Join membership to unlock their premium posts.'}
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <button
+              type="button"
+              onClick={() => setContentVisibilityFilter('all')}
+              className={`feed-filter-chip ${contentVisibilityFilter === 'all' ? 'feed-filter-chip-active' : ''}`}
+            >
+              All ({content.length})
+            </button>
+            <button
+              type="button"
+              onClick={() => setContentVisibilityFilter('public')}
+              className={`feed-filter-chip ${contentVisibilityFilter === 'public' ? 'feed-filter-chip-active' : ''}`}
+            >
+              Public ({publicContent.length})
+            </button>
+            {shouldShowPremiumFilter ? (
+              <button
+                type="button"
+                onClick={() => setContentVisibilityFilter('premium')}
+                className={`feed-filter-chip ${contentVisibilityFilter === 'premium' ? 'feed-filter-chip-active' : ''}`}
+              >
+                Premium ({premiumContent.length})
+              </button>
+            ) : null}
           </div>
         </div>
 
-        {content.length === 0 ? (
+        {filteredContent.length === 0 ? (
           <div className="detail-empty-state">
-            <div className="text-lg font-semibold text-white">No content yet</div>
-            <p className="max-w-md text-sm text-slate-400">No published content available</p>
+            <div className="text-lg font-semibold text-white">No content in this filter</div>
+            <p className="max-w-md text-sm text-slate-400">
+              {contentVisibilityFilter === 'premium'
+                ? 'No members-only posts are available in this profile view yet.'
+                : contentVisibilityFilter === 'public'
+                  ? 'No public posts are available in this profile view yet.'
+                  : 'No published content available.'}
+            </p>
           </div>
         ) : (
           <div className="grid gap-5 lg:grid-cols-2">
-            {content.map((item) => {
+            {filteredContent.map((item) => {
               const isStory = item.content !== undefined;
               const detailPath = isStory ? `/story/${item._id}` : `/artwork/${item._id}`;
               const displayTags = normalizeTagList(item.tags || []).slice(0, 3);
@@ -640,6 +1079,13 @@ export default function ProfilePage() {
                     <div className="flex items-center gap-2">
                       <span className="rounded-full border border-slate-700 px-3 py-1 text-xs uppercase text-slate-300">
                         {isStory ? 'story' : 'artwork'}
+                      </span>
+                      <span className={`rounded-full border px-3 py-1 text-xs uppercase ${
+                        item.isPremium === true
+                          ? 'border-amber-400/30 bg-amber-500/10 text-amber-200'
+                          : 'border-emerald-400/25 bg-emerald-500/10 text-emerald-200'
+                      }`}>
+                        {item.isPremium === true ? 'premium' : 'public'}
                       </span>
                       <span className="rounded-full border border-slate-700 px-3 py-1 text-xs uppercase text-slate-300">
                         {item.status || 'approved'}

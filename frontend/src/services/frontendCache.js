@@ -3,6 +3,7 @@ const FRONTEND_CACHE_INVALIDATED_EVENT = 'frontend-cache-invalidated';
 
 export const FRONTEND_CACHE_NAMESPACES = {
   HOME_FEED: 'home-feed',
+  MEMBERSHIP_FEED: 'membership-feed',
   TRENDING: 'trending',
   CONTENT_SEARCH: 'content-search',
   CREATOR_SEARCH: 'creator-search',

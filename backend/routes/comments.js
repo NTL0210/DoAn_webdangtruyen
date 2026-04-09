@@ -1,7 +1,7 @@
 import express from 'express';
 import { createComment, getComments, deleteComment } from '../controllers/CommentController.js';
 import { cacheResponse } from '../middleware/cacheResponse.js';
-import { authenticateToken } from '../middleware/auth.js';
+import { authenticateToken, optionalAuth } from '../middleware/auth.js';
 import { validateComment } from '../middleware/validation.js';
 import { rateLimitComment, rateLimitRead } from '../middleware/rateLimit.js';
 import { CACHE_NAMESPACES } from '../services/cacheStore.js';
@@ -14,10 +14,12 @@ router.post('/content/:id/comments', authenticateToken, rateLimitComment, valida
 // GET /api/content/:id/comments - Get comments
 router.get(
 	'/content/:id/comments',
+	optionalAuth,
 	rateLimitRead,
 	cacheResponse({
 		namespace: CACHE_NAMESPACES.COMMENT_THREADS,
-		ttlSeconds: 30
+		ttlSeconds: 30,
+		shouldCache: (req) => !req.user
 	}),
 	getComments
 );

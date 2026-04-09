@@ -18,6 +18,9 @@ export function useCursorFeed({
   params = {},
   limit = 10,
   namespace = FRONTEND_CACHE_NAMESPACES.HOME_FEED,
+  endpoint = '/api/content/feed',
+  scope = 'shared',
+  requestOptions,
   ttlMs = 30 * 1000,
   rootMargin = '900px 0px'
 }) {
@@ -61,8 +64,10 @@ export function useCursorFeed({
       const data = await fetchJsonWithCache({
         namespace,
         key: `${baseQueryString}&cursor=${encodeURIComponent(cursor || 'first')}`,
-        url: `${API_URL}/api/content/feed?${searchParams.toString()}`,
-        ttlMs
+        url: `${API_URL}${endpoint}?${searchParams.toString()}`,
+        ttlMs,
+        scope,
+        options: requestOptions
       });
 
       if (requestIdRef.current !== requestId) {
@@ -127,7 +132,7 @@ export function useCursorFeed({
     return () => {
       observer.disconnect();
     };
-  }, [enabled, hasMore, isLoadingMore, loading, nextCursor, rootMargin, baseQueryString, loadMoreNode]);
+  }, [enabled, hasMore, isLoadingMore, loading, nextCursor, rootMargin, baseQueryString, loadMoreNode, endpoint, requestOptions, scope]);
 
   return {
     items,

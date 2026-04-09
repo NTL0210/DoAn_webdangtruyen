@@ -97,7 +97,17 @@ export function validateRegistration(req, res, next) {
 
 // Validate profile update input
 export function validateProfileUpdate(req, res, next) {
-  const { username, email, bio } = req.body;
+  const {
+    username,
+    email,
+    bio,
+    twoFactorEnabled,
+    subscriptionEnabled,
+    subscriptionPrice,
+    membershipTitle,
+    membershipDescription,
+    membershipBenefits
+  } = req.body;
 
   if (username !== undefined) {
     if (!username.trim()) {
@@ -153,6 +163,138 @@ export function validateProfileUpdate(req, res, next) {
     }
 
     req.body.bio = sanitizeText(bio);
+  }
+
+  if (twoFactorEnabled !== undefined) {
+    if (twoFactorEnabled === true || twoFactorEnabled === false) {
+      req.body.twoFactorEnabled = twoFactorEnabled;
+    } else if (twoFactorEnabled === 'true' || twoFactorEnabled === 'false') {
+      req.body.twoFactorEnabled = twoFactorEnabled === 'true';
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'twoFactorEnabled must be true or false',
+          field: 'twoFactorEnabled'
+        }
+      });
+    }
+  }
+
+  if (subscriptionEnabled !== undefined) {
+    if (subscriptionEnabled === true || subscriptionEnabled === false) {
+      req.body.subscriptionEnabled = subscriptionEnabled;
+    } else if (subscriptionEnabled === 'true' || subscriptionEnabled === 'false') {
+      req.body.subscriptionEnabled = subscriptionEnabled === 'true';
+    } else {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'subscriptionEnabled must be true or false',
+          field: 'subscriptionEnabled'
+        }
+      });
+    }
+  }
+
+  if (subscriptionPrice !== undefined) {
+    const normalizedPrice = Number(subscriptionPrice);
+
+    if (!Number.isInteger(normalizedPrice) || normalizedPrice < 0) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'subscriptionPrice must be a non-negative integer',
+          field: 'subscriptionPrice'
+        }
+      });
+    }
+
+    req.body.subscriptionPrice = normalizedPrice;
+  }
+
+  if (membershipTitle !== undefined) {
+    const normalizedTitle = sanitizeText(String(membershipTitle).trim());
+
+    if (!normalizedTitle) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'membershipTitle cannot be empty',
+          field: 'membershipTitle'
+        }
+      });
+    }
+
+    if (normalizedTitle.length > 80) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'membershipTitle must not exceed 80 characters',
+          field: 'membershipTitle'
+        }
+      });
+    }
+
+    req.body.membershipTitle = normalizedTitle;
+  }
+
+  if (membershipDescription !== undefined) {
+    const normalizedDescription = sanitizeText(String(membershipDescription));
+
+    if (normalizedDescription.length > 500) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'membershipDescription must not exceed 500 characters',
+          field: 'membershipDescription'
+        }
+      });
+    }
+
+    req.body.membershipDescription = normalizedDescription;
+  }
+
+  if (membershipBenefits !== undefined) {
+    const rawBenefits = Array.isArray(membershipBenefits)
+      ? membershipBenefits
+      : String(membershipBenefits)
+        .split(/\r?\n/)
+        .map((item) => item.trim());
+
+    const normalizedBenefits = rawBenefits
+      .map((item) => sanitizeText(String(item).trim()))
+      .filter(Boolean);
+
+    if (normalizedBenefits.length > 8) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'membershipBenefits can contain up to 8 items',
+          field: 'membershipBenefits'
+        }
+      });
+    }
+
+    if (normalizedBenefits.some((item) => item.length > 120)) {
+      return res.status(400).json({
+        success: false,
+        error: {
+          code: 'VALIDATION_ERROR',
+          message: 'Each membership benefit must not exceed 120 characters',
+          field: 'membershipBenefits'
+        }
+      });
+    }
+
+    req.body.membershipBenefits = normalizedBenefits;
   }
 
   next();
@@ -281,8 +423,6 @@ export function validateArtwork(req, res, next) {
     req.body.description = sanitizeText(req.body.description);
   }
   req.body.tags = tagValidation.tags;
-
-  next();
 
   next();
 }

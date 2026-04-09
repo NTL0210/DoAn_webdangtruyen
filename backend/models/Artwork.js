@@ -44,14 +44,9 @@ const artworkSchema = new mongoose.Schema({
     enum: ['draft', 'pending', 'approved', 'rejected', 'deleted'],
     default: 'pending'
   },
-  hiddenByPermanentBan: {
+  isPremium: {
     type: Boolean,
     default: false
-  },
-  statusBeforePermanentBan: {
-    type: String,
-    enum: ['draft', 'pending', 'approved', 'rejected', 'deleted', null],
-    default: null
   },
   likes: {
     type: Number,
@@ -71,7 +66,6 @@ const artworkSchema = new mongoose.Schema({
 
 // Create indexes for faster queries
 artworkSchema.index({ author: 1 });
-artworkSchema.index({ author: 1, hiddenByPermanentBan: 1 });
 artworkSchema.index({ status: 1 });
 artworkSchema.index({ createdAt: -1 });
 artworkSchema.index({ tags: 1 });

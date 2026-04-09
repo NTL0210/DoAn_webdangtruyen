@@ -1,5 +1,5 @@
 import express from 'express';
-import { createStory, createArtwork, getContent, getHomeFeed, searchContent, getTrending, getPopularCreators, getRecommendedTags, getTrendingTags, getTagDirectory, toggleLike, toggleBookmark, deleteContent, updateContent } from '../controllers/ContentController.js';
+import { createStory, createArtwork, getContent, getHomeFeed, getMembershipFeed, searchContent, getTrending, getPopularCreators, getRecommendedTags, getTrendingTags, getTagDirectory, toggleLike, toggleBookmark, deleteContent, updateContent } from '../controllers/ContentController.js';
 import { authenticateToken, optionalAuth, requirePostingAccess } from '../middleware/auth.js';
 import { cacheResponse } from '../middleware/cacheResponse.js';
 import { validateStory, validateArtwork } from '../middleware/validation.js';
@@ -38,6 +38,18 @@ router.get(
 		ttlSeconds: 30
 	}),
 	getHomeFeed
+);
+
+router.get(
+	'/content/memberships/feed',
+	optionalAuth,
+	rateLimitRead,
+	cacheResponse({
+		namespace: CACHE_NAMESPACES.CONTENT_DISCOVERY,
+		ttlSeconds: 30,
+		shouldCache: (req) => !req.user
+	}),
+	getMembershipFeed
 );
 
 // GET /api/content/trending - Get trending content
