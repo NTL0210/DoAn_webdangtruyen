@@ -1086,113 +1086,121 @@ export default function AdminPage() {
             </p>
           </div>
         )
-      ) : loadingAppeals && !appeals.length ? (
-        <SectionLoader message="Loading appeal queue..." />
-      ) : appeals.length ? (
-        <div className="space-y-4">
-          {appeals.map((appeal) => {
-            const user = appeal.user;
-            const isPending = appeal.status === 'pending';
+      ) : activeTab === 'appeals' ? (
+        loadingAppeals && !appeals.length ? (
+          <SectionLoader message="Loading appeal queue..." />
+        ) : appeals.length ? (
+          <div className="space-y-4">
+            {appeals.map((appeal) => {
+              const user = appeal.user;
+              const isPending = appeal.status === 'pending';
 
-            return (
-              <article key={appeal._id} className="detail-card p-6">
-                <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
-                  <div className="space-y-4">
-                    <div className="flex flex-wrap items-center gap-2 text-xs uppercase">
-                      {isPending ? (
-                        <StatusPill tone="warning">Pending</StatusPill>
-                      ) : appeal.status === 'approved' ? (
-                        <StatusPill tone="success">Approved</StatusPill>
-                      ) : (
-                        <StatusPill tone="danger">Rejected</StatusPill>
-                      )}
-                      <span className="text-slate-500">Submitted {formatRelative(appeal.createdAt)}</span>
-                      {appeal.reviewedAt ? <span className="text-slate-500">Reviewed {formatRelative(appeal.reviewedAt)}</span> : null}
-                    </div>
+              return (
+                <article key={appeal._id} className="detail-card p-6">
+                  <div className="flex flex-col gap-6 xl:flex-row xl:items-start xl:justify-between">
+                    <div className="space-y-4">
+                      <div className="flex flex-wrap items-center gap-2 text-xs uppercase">
+                        {isPending ? (
+                          <StatusPill tone="warning">Pending</StatusPill>
+                        ) : appeal.status === 'approved' ? (
+                          <StatusPill tone="success">Approved</StatusPill>
+                        ) : (
+                          <StatusPill tone="danger">Rejected</StatusPill>
+                        )}
+                        <span className="text-slate-500">Submitted {formatRelative(appeal.createdAt)}</span>
+                        {appeal.reviewedAt ? <span className="text-slate-500">Reviewed {formatRelative(appeal.reviewedAt)}</span> : null}
+                      </div>
 
-                    <div>
-                      <h3 className="text-xl font-semibold text-white">@{user?.username || 'Unknown user'}</h3>
-                      <p className="mt-2 text-sm text-slate-400">{user?.email || 'No email available'}</p>
-                    </div>
+                      <div>
+                        <h3 className="text-xl font-semibold text-white">@{user?.username || 'Unknown user'}</h3>
+                        <p className="mt-2 text-sm text-slate-400">{user?.email || 'No email available'}</p>
+                      </div>
 
-                    <div className="grid gap-3 lg:grid-cols-2">
+                      <div className="grid gap-3 lg:grid-cols-2">
+                        <div className="detail-subcard">
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Ban Context</p>
+                          <p className="mt-2 text-sm text-slate-300">Reason: {appeal.banReason}</p>
+                          <p className="mt-2 text-sm text-slate-400">Banned at: {formatDateTime(appeal.bannedAt || user?.permanentlyBannedAt)}</p>
+                          {user?.permanentDeletionScheduledFor ? (
+                            <>
+                              <p className="mt-2 text-sm text-amber-300">Scheduled purge: {formatDateTime(user.permanentDeletionScheduledFor)}</p>
+                              <p className="mt-2 text-sm text-slate-400">Time remaining: {formatRemainingTime(user.permanentDeletionMillisecondsRemaining)}</p>
+                            </>
+                          ) : null}
+                        </div>
+
+                        <div className="detail-subcard">
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Appeal Submission</p>
+                          <p className="mt-2 text-sm text-slate-300">{appeal.appealReason}</p>
+                          <p className="mt-2 text-sm text-slate-400">Evidence: {appeal.evidence || 'No supporting evidence provided'}</p>
+                        </div>
+                      </div>
+
                       <div className="detail-subcard">
-                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Ban Context</p>
-                        <p className="mt-2 text-sm text-slate-300">Reason: {appeal.banReason}</p>
-                        <p className="mt-2 text-sm text-slate-400">Banned at: {formatDateTime(appeal.bannedAt || user?.permanentlyBannedAt)}</p>
-                        {user?.permanentDeletionScheduledFor ? (
-                          <>
-                            <p className="mt-2 text-sm text-amber-300">Scheduled purge: {formatDateTime(user.permanentDeletionScheduledFor)}</p>
-                            <p className="mt-2 text-sm text-slate-400">Time remaining: {formatRemainingTime(user.permanentDeletionMillisecondsRemaining)}</p>
-                          </>
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Review Details</p>
+                          <button
+                            type="button"
+                            onClick={() => setExpandedAppealId((prev) => (prev === appeal._id ? '' : appeal._id))}
+                            className="text-sm text-slate-300 transition hover:text-white"
+                          >
+                            {expandedAppealId === appeal._id ? 'Hide full appeal' : 'View full appeal'}
+                          </button>
+                        </div>
+
+                        {expandedAppealId === appeal._id ? (
+                          <div className="mt-4 space-y-3 text-sm text-slate-300">
+                            <p>Appeal message: {appeal.appealReason}</p>
+                            <p>Evidence: {appeal.evidence || 'No evidence attached'}</p>
+                            <p>Ban reason snapshot: {appeal.banReason}</p>
+                            <p>Reviewer: {appeal.reviewedBy?.username || 'Not reviewed yet'}</p>
+                            <p>Review note: {appeal.reviewReason || 'Not reviewed yet'}</p>
+                          </div>
                         ) : null}
                       </div>
-
-                      <div className="detail-subcard">
-                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Appeal Submission</p>
-                        <p className="mt-2 text-sm text-slate-300">{appeal.appealReason}</p>
-                        <p className="mt-2 text-sm text-slate-400">Evidence: {appeal.evidence || 'No supporting evidence provided'}</p>
-                      </div>
                     </div>
 
-                    <div className="detail-subcard">
-                      <div className="flex items-center justify-between gap-3">
-                        <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Review Details</p>
-                        <button
-                          type="button"
-                          onClick={() => setExpandedAppealId((prev) => (prev === appeal._id ? '' : appeal._id))}
-                          className="text-sm text-slate-300 transition hover:text-white"
-                        >
-                          {expandedAppealId === appeal._id ? 'Hide full appeal' : 'View full appeal'}
-                        </button>
-                      </div>
-
-                      {expandedAppealId === appeal._id ? (
-                        <div className="mt-4 space-y-3 text-sm text-slate-300">
-                          <p>Appeal message: {appeal.appealReason}</p>
-                          <p>Evidence: {appeal.evidence || 'No evidence attached'}</p>
-                          <p>Ban reason snapshot: {appeal.banReason}</p>
-                          <p>Reviewer: {appeal.reviewedBy?.username || 'Not reviewed yet'}</p>
-                          <p>Review note: {appeal.reviewReason || 'Not reviewed yet'}</p>
+                    <div className="flex shrink-0 flex-wrap gap-3 xl:w-60 xl:flex-col">
+                      {isPending ? (
+                        <>
+                          <button
+                            type="button"
+                            disabled={processingId === `appeal-approve-${appeal._id}`}
+                            onClick={() => approveAppeal(appeal)}
+                            className="inline-flex items-center justify-center rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {processingId === `appeal-approve-${appeal._id}` ? 'Processing...' : 'Approve Appeal'}
+                          </button>
+                          <button
+                            type="button"
+                            disabled={processingId === `appeal-reject-${appeal._id}`}
+                            onClick={() => openActionModal('appeal-reject', appeal)}
+                            className="inline-flex items-center justify-center rounded-2xl bg-rose-600 px-5 py-3 text-sm font-medium text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {processingId === `appeal-reject-${appeal._id}` ? 'Processing...' : 'Reject Appeal'}
+                          </button>
+                        </>
+                      ) : (
+                        <div className="rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-4 text-sm text-slate-300">
+                          <p className="font-medium text-white">Review completed</p>
+                          <p className="mt-2">{appeal.reviewReason || 'No review note provided.'}</p>
                         </div>
-                      ) : null}
+                      )}
                     </div>
                   </div>
-
-                  <div className="flex shrink-0 flex-wrap gap-3 xl:w-60 xl:flex-col">
-                    {isPending ? (
-                      <>
-                        <button
-                          type="button"
-                          disabled={processingId === `appeal-approve-${appeal._id}`}
-                          onClick={() => approveAppeal(appeal)}
-                          className="inline-flex items-center justify-center rounded-2xl bg-emerald-600 px-5 py-3 text-sm font-medium text-white transition hover:bg-emerald-500 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {processingId === `appeal-approve-${appeal._id}` ? 'Processing...' : 'Approve Appeal'}
-                        </button>
-                        <button
-                          type="button"
-                          disabled={processingId === `appeal-reject-${appeal._id}`}
-                          onClick={() => openActionModal('appeal-reject', appeal)}
-                          className="inline-flex items-center justify-center rounded-2xl bg-rose-600 px-5 py-3 text-sm font-medium text-white transition hover:bg-rose-500 disabled:cursor-not-allowed disabled:opacity-60"
-                        >
-                          {processingId === `appeal-reject-${appeal._id}` ? 'Processing...' : 'Reject Appeal'}
-                        </button>
-                      </>
-                    ) : (
-                      <div className="rounded-2xl border border-slate-800 bg-slate-950/40 px-4 py-4 text-sm text-slate-300">
-                        <p className="font-medium text-white">Review completed</p>
-                        <p className="mt-2">{appeal.reviewReason || 'No review note provided.'}</p>
-                      </div>
-                    )}
-                  </div>
-                </div>
-              </article>
-            );
-          })}
-        </div>
-      ) : (
-        activeTab === 'history' ? (
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="detail-empty-state">
+            <div className="text-lg font-semibold text-white">No appeals submitted</div>
+            <p className="max-w-md text-sm text-slate-400">
+              Permanent-ban appeals will appear here with the ban reason, appeal text, evidence, and review actions.
+            </p>
+          </div>
+        )
+      ) : activeTab === 'history' ? (
           loadingHistory && !history.length ? (
             <SectionLoader message="Loading moderation history..." />
           ) : history.length ? (
@@ -1243,14 +1251,13 @@ export default function AdminPage() {
               </p>
             </div>
           )
-        ) : (
+      ) : (
         <div className="detail-empty-state">
-          <div className="text-lg font-semibold text-white">No appeals submitted</div>
+          <div className="text-lg font-semibold text-white">No moderation data available</div>
           <p className="max-w-md text-sm text-slate-400">
-            Permanent-ban appeals will appear here with the ban reason, appeal text, evidence, and review actions.
+            Switch tabs to review reports, accounts, appeals, or audit history.
           </p>
         </div>
-        )
       )}
 
       {actionModal.action ? (

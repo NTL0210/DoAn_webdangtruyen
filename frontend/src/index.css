@@ -1125,6 +1125,43 @@
     @apply panel flex min-h-56 flex-col items-center justify-center gap-3 p-8 text-center;
   }
 
+  .saved-library-card {
+    @apply overflow-hidden rounded-[1.7rem] border border-slate-800/90;
+    background:
+      radial-gradient(circle at top left, rgba(56, 189, 248, 0.08), transparent 34%),
+      linear-gradient(180deg, rgba(15, 23, 42, 0.96) 0%, rgba(2, 6, 23, 0.98) 100%);
+    box-shadow: 0 18px 44px rgba(2, 6, 23, 0.22);
+  }
+
+  .saved-library-card .feed-card {
+    @apply px-5 py-5 sm:px-6;
+  }
+
+  .saved-library-card .feed-card:hover {
+    background: rgba(255, 255, 255, 0.018);
+  }
+
+  .saved-library-card .feed-media,
+  .saved-library-card .feed-media-grid {
+    border-color: rgba(51, 65, 85, 0.9);
+    background: rgba(2, 6, 23, 0.86);
+  }
+
+  .saved-library-card .feed-card-title {
+    font-size: 1.35rem;
+  }
+
+  .saved-library-card .feed-open-link,
+  .saved-library-card .feed-action-button {
+    color: #cbd5e1;
+  }
+
+  .saved-library-card .feed-open-link:hover,
+  .saved-library-card .feed-action-button:hover {
+    background: rgba(255, 255, 255, 0.05);
+    color: #ffffff;
+  }
+
   .detail-inline-button {
     @apply rounded-2xl border border-slate-700 px-4 py-2 text-sm text-slate-300 transition hover:bg-slate-800 hover:text-white;
   }
