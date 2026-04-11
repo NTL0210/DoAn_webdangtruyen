@@ -20,9 +20,14 @@ export default function NotificationPage() {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
-  const fetchNotifications = async () => {
+  const fetchNotifications = async (options = {}) => {
+    const { silent = false } = options;
+
     try {
-      setLoading(true);
+      if (!silent) {
+        setLoading(true);
+      }
+
       const response = await fetch(`${API_URL}/api/notifications?limit=40`, {
         headers: {
           Authorization: `Bearer ${getToken()}`
@@ -39,7 +44,9 @@ export default function NotificationPage() {
     } catch (err) {
       setError('Failed to load notifications');
     } finally {
-      setLoading(false);
+      if (!silent) {
+        setLoading(false);
+      }
     }
   };
 
@@ -50,7 +57,7 @@ export default function NotificationPage() {
   useEffect(() => {
     const handleRefresh = () => {
       if (getToken()) {
-        fetchNotifications();
+        fetchNotifications({ silent: true });
       }
     };
 

@@ -1,6 +1,8 @@
 import { parseTagsInput } from '../utils/hashtags.js';
 import { sanitizeInlineText, sanitizeUserText } from '../utils/textSanitizer.js';
 
+const STORY_TEXT_MAX_COMBINING_MARKS = 4;
+
 function sanitizeText(text, options) {
   return sanitizeUserText(text, options);
 }
@@ -341,9 +343,15 @@ export function validateStory(req, res, next) {
 
   // Sanitize text inputs
   req.body.title = sanitizeInlineText(title);
-  req.body.content = sanitizeText(content, { preserveLineBreaks: true });
+  req.body.content = sanitizeText(content, {
+    preserveLineBreaks: true,
+    maxCombiningMarksPerCharacter: STORY_TEXT_MAX_COMBINING_MARKS
+  });
   if (req.body.description) {
-    req.body.description = sanitizeText(req.body.description, { preserveLineBreaks: true });
+    req.body.description = sanitizeText(req.body.description, {
+      preserveLineBreaks: true,
+      maxCombiningMarksPerCharacter: STORY_TEXT_MAX_COMBINING_MARKS
+    });
   }
   req.body.tags = tagValidation.tags;
 

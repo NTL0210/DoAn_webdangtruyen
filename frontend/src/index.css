@@ -895,6 +895,12 @@
     color: #7dd3fc;
   }
 
+  .safe-zalgo-text {
+    overflow-wrap: anywhere;
+    word-break: break-word;
+    padding-block: 0.16em;
+  }
+
   .feed-copy-clamp {
     display: -webkit-box;
     overflow: hidden;
@@ -911,7 +917,7 @@
   }
 
   .feed-media {
-    @apply mt-3 overflow-hidden rounded-[1.65rem] border border-slate-800 bg-slate-950;
+    @apply relative mt-3 overflow-hidden rounded-[1.65rem] border border-slate-800 bg-slate-950;
   }
 
   .feed-media-grid {

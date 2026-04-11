@@ -11,6 +11,7 @@ import { getContentImageAssets, getContentQualityBadge, getDisplayImageUrl } fro
 import { toSafeInitial, toSafeInlineText, toSafeText } from '../utils/safeText';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const STORY_TEXT_MAX_COMBINING_MARKS = 4;
 const STORY_FALLBACK_SVG = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
   '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675"><defs><linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#0f172a"/><stop offset="1" stop-color="#1e293b"/></linearGradient></defs><rect width="1200" height="675" fill="url(#bg)"/><circle cx="180" cy="520" r="220" fill="#334155" opacity="0.25"/><circle cx="980" cy="140" r="180" fill="#475569" opacity="0.22"/><rect x="420" y="220" width="360" height="220" rx="24" fill="#0b1222" stroke="#64748b" stroke-width="2"/><rect x="465" y="275" width="270" height="14" rx="7" fill="#94a3b8" opacity="0.85"/><rect x="465" y="315" width="220" height="14" rx="7" fill="#94a3b8" opacity="0.65"/><rect x="465" y="355" width="180" height="14" rx="7" fill="#94a3b8" opacity="0.55"/><text x="600" y="188" fill="#e2e8f0" text-anchor="middle" font-size="42" font-family="Georgia, serif">Story Cover</text></svg>'
 )}`;
@@ -45,7 +46,10 @@ function ContentCardComponent({ item, onInteractionComplete }) {
   const qualityBadge = getContentQualityBadge(contentItem);
   const safeAuthorUsername = toSafeInlineText(contentItem.author?.username, 'Unknown');
   const safeTitle = toSafeInlineText(contentItem.title, isStory ? 'Untitled story' : 'Untitled artwork');
-  const safeDescription = toSafeText(contentItem.description, { fallback: '' });
+  const safeDescription = toSafeText(contentItem.description, {
+    fallback: '',
+    ...(isStory ? { maxCombiningMarksPerCharacter: STORY_TEXT_MAX_COMBINING_MARKS } : {})
+  });
 
   const getFallbackImage = () => (isStory ? STORY_FALLBACK_SVG : IMAGE_FALLBACK_SVG);
 
@@ -135,11 +139,11 @@ function ContentCardComponent({ item, onInteractionComplete }) {
 
           <div className="mt-3 space-y-3">
             <div>
-              <Link to={detailPath} {...getRoutePrefetchProps(detailPath)} className="feed-card-title">
+              <Link to={detailPath} {...getRoutePrefetchProps(detailPath)} className="feed-card-title safe-zalgo-text">
                 {safeTitle}
               </Link>
               {safeDescription ? (
-                <p className="feed-copy-clamp mt-2 text-[15px] leading-7 text-slate-200">{safeDescription}</p>
+                <p className="feed-copy-clamp safe-zalgo-text mt-2 text-[15px] leading-7 text-slate-200">{safeDescription}</p>
               ) : null}
             </div>
 
