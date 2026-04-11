@@ -13,6 +13,7 @@ import { buildContentSearchFields, buildSearchNameFields } from '../utils/search
 import { sanitizeInlineText, sanitizeUserText } from '../utils/textSanitizer.js';
 
 const BATCH_SIZE = 200;
+const STORY_TEXT_MAX_COMBINING_MARKS = 4;
 const isDryRun = process.argv.includes('--dry-run');
 
 function arraysEqual(left = [], right = []) {
@@ -86,8 +87,14 @@ function buildUserUpdate(user) {
 function buildStoryUpdate(story) {
   const update = {};
   const title = sanitizeInlineText(story.title);
-  const description = sanitizeUserText(story.description, { preserveLineBreaks: true });
-  const content = sanitizeUserText(story.content, { preserveLineBreaks: true });
+  const description = sanitizeUserText(story.description, {
+    preserveLineBreaks: true,
+    maxCombiningMarksPerCharacter: STORY_TEXT_MAX_COMBINING_MARKS
+  });
+  const content = sanitizeUserText(story.content, {
+    preserveLineBreaks: true,
+    maxCombiningMarksPerCharacter: STORY_TEXT_MAX_COMBINING_MARKS
+  });
   const tags = sanitizeTagList(story.tags);
   const searchFields = buildContentSearchFields(title, description);
 

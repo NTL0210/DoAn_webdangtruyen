@@ -92,6 +92,6 @@ export function getContentQualityBadge(content) {
   const hasUltraHd = content?.mediaSummary?.hasUltraHd === true || assets.some((asset) => asset.isUltraHd);
 
   return hasUltraHd
-    ? { label: '4K source', tone: 'ultra' }
-    : { label: 'HD source', tone: 'standard' };
+    ? { label: '4K', tone: 'ultra' }
+    : { label: 'HD', tone: 'standard' };
 }

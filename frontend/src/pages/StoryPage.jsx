@@ -3,16 +3,22 @@ import { ArrowLeft, Bookmark, Heart, MessageCircle, Zap } from 'lucide-react';
 import { Link, useLocation, useParams, useNavigate } from 'react-router-dom';
 import { getCurrentUser, getToken, subscribeToCurrentUserChange, updateCurrentUserCollection } from '../services/authService';
 import { invalidateContentMutationCaches } from '../services/appDataInvalidation';
+import { LazyImage } from '../components/common/LazyImage';
 import { PremiumAccessGate } from '../components/common/PremiumAccessGate';
 import { ReportContentButton } from '../components/common/ReportContentButton';
 import { subscribeToContentComments, subscribeToNotificationSocketState } from '../services/notificationService';
 import { getRoutePrefetchProps } from '../services/routePrefetch';
+import { getContentImageAssets, getContentQualityBadge, getDisplayImageUrl } from '../utils/contentMedia';
 import { formatCount, formatRelative } from '../utils/helpers';
 import { formatTag, normalizeTagList } from '../utils/hashtags';
 import { buildRemovedContentLink } from '../utils/notifications';
 import { toSafeInitial, toSafeInlineText, toSafeText } from '../utils/safeText';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
+const STORY_TEXT_MAX_COMBINING_MARKS = 4;
+const STORY_FALLBACK_SVG = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
+  '<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="675" viewBox="0 0 1200 675"><defs><linearGradient id="bg" x1="0" x2="1" y1="0" y2="1"><stop offset="0" stop-color="#0f172a"/><stop offset="1" stop-color="#1e293b"/></linearGradient></defs><rect width="1200" height="675" fill="url(#bg)"/><circle cx="180" cy="520" r="220" fill="#334155" opacity="0.25"/><circle cx="980" cy="140" r="180" fill="#475569" opacity="0.22"/><rect x="420" y="220" width="360" height="220" rx="24" fill="#0b1222" stroke="#64748b" stroke-width="2"/><rect x="465" y="275" width="270" height="14" rx="7" fill="#94a3b8" opacity="0.85"/><rect x="465" y="315" width="220" height="14" rx="7" fill="#94a3b8" opacity="0.65"/><rect x="465" y="355" width="180" height="14" rx="7" fill="#94a3b8" opacity="0.55"/><text x="600" y="188" fill="#e2e8f0" text-anchor="middle" font-size="42" font-family="Georgia, serif">Story Cover</text></svg>'
+)}`;
 
 function getAvatarUrl(avatar) {
   if (!avatar) {
@@ -58,13 +64,23 @@ export default function StoryPage() {
     return bookmarks.map((value) => String(value)).includes(String(id));
   });
   const storyTags = normalizeTagList(story?.tags || []);
+  const storyMediaAssets = getContentImageAssets(story);
+  const visibleStoryMediaAssets = storyMediaAssets.slice(0, 4);
+  const hiddenStoryMediaCount = Math.max(storyMediaAssets.length - 4, 0);
+  const storyQualityBadge = getContentQualityBadge(story);
   const hasHandledAuthIdentityRef = useRef(false);
   const authIdentityKey = `${getToken() ? 'auth' : 'guest'}:${currentUser?._id || currentUser?.id || 'guest'}`;
   const authorAvatarUrl = getAvatarUrl(story?.author?.avatar);
   const safeAuthorUsername = toSafeInlineText(story?.author?.username, 'Unknown');
   const safeStoryTitle = toSafeInlineText(story?.title, 'Untitled story');
-  const safeStoryDescription = toSafeText(story?.description, { fallback: '' });
-  const safeStoryContent = toSafeText(story?.content, { fallback: '' });
+  const safeStoryDescription = toSafeText(story?.description, {
+    fallback: '',
+    maxCombiningMarksPerCharacter: STORY_TEXT_MAX_COMBINING_MARKS
+  });
+  const safeStoryContent = toSafeText(story?.content, {
+    fallback: '',
+    maxCombiningMarksPerCharacter: STORY_TEXT_MAX_COMBINING_MARKS
+  });
 
   const isAuthor = story?.author?._id === currentUser._id || story?.author?._id === currentUser.id;
   const highlightTimeoutRef = useRef(null);
@@ -512,9 +528,9 @@ export default function StoryPage() {
                 <span className="text-slate-500">{formatRelative(story.createdAt)}</span>
               </div>
 
-              <h2 className="mt-4 detail-title">{safeStoryTitle}</h2>
+              <h2 className="mt-4 detail-title safe-zalgo-text">{safeStoryTitle}</h2>
 
-              {safeStoryDescription ? <p className="mt-4 text-lg leading-8 text-slate-300">{safeStoryDescription}</p> : null}
+              {safeStoryDescription ? <p className="detail-description safe-zalgo-text mt-4">{safeStoryDescription}</p> : null}
 
               {storyTags.length > 0 ? (
                 <div className="mt-4 flex flex-wrap gap-2">
@@ -526,7 +542,34 @@ export default function StoryPage() {
                 </div>
               ) : null}
 
-              <div className="mt-5 detail-prose whitespace-pre-wrap leading-8">{safeStoryContent}</div>
+              {storyMediaAssets.length > 0 ? (
+                <div className={`detail-media-grid mt-5 ${storyMediaAssets.length === 1 ? 'detail-media-grid-single' : ''}`}>
+                  {visibleStoryMediaAssets.map((asset, index) => {
+                    const showMoreOverlay = index === 3 && hiddenStoryMediaCount > 0;
+                    const isWideLead = visibleStoryMediaAssets.length === 3 && index === 0;
+
+                    return (
+                      <div
+                        key={`${asset.originalUrl || asset.previewUrl}-${index}`}
+                        className={`detail-media-tile ${storyMediaAssets.length === 1 ? 'detail-media-tile-single' : isWideLead ? 'detail-media-tile-featured' : 'detail-media-tile-rect'}`}
+                      >
+                        <LazyImage
+                          src={getDisplayImageUrl(asset) || STORY_FALLBACK_SVG}
+                          alt={`${safeStoryTitle} - Cover ${index + 1}`}
+                          fallbackSrc={STORY_FALLBACK_SVG}
+                          wrapperClassName="h-full w-full"
+                          className="h-full w-full object-cover"
+                        />
+                        <div className="detail-media-badge">{index + 1}/{storyMediaAssets.length}</div>
+                        {index === 0 && storyQualityBadge ? <div className="detail-media-badge left-auto right-3">{storyQualityBadge.label}</div> : null}
+                        {showMoreOverlay ? <div className="detail-media-more">+{hiddenStoryMediaCount}</div> : null}
+                      </div>
+                    );
+                  })}
+                </div>
+              ) : null}
+
+              <div className="mt-5 detail-prose safe-zalgo-text whitespace-pre-wrap leading-8">{safeStoryContent}</div>
 
               <div className="detail-post-meta-line">{new Date(story.createdAt).toLocaleString()}</div>
 

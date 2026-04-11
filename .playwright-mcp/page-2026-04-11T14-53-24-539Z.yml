@@ -1,0 +1,6 @@
+- generic [ref=e2]:
+  - generic:
+    - img
+  - generic [ref=e4]:
+    - heading "THE INDEX" [level=1] [ref=e5]
+    - paragraph [ref=e6]: Click anywhere or press any key to continue
