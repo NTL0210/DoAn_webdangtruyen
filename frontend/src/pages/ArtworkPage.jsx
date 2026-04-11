@@ -11,6 +11,7 @@ import { getRoutePrefetchProps } from '../services/routePrefetch';
 import { formatCount, formatRelative } from '../utils/helpers';
 import { formatTag, normalizeTagList } from '../utils/hashtags';
 import { buildRemovedContentLink } from '../utils/notifications';
+import { toSafeInitial, toSafeInlineText, toSafeText } from '../utils/safeText';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -67,6 +68,9 @@ export default function ArtworkPage() {
   const visibleArtworkImages = artworkImages.slice(0, 4);
   const hiddenArtworkImageCount = Math.max(artworkImages.length - 4, 0);
   const authorAvatarUrl = getAvatarUrl(artwork?.author?.avatar);
+  const safeAuthorUsername = toSafeInlineText(artwork?.author?.username, 'Unknown');
+  const safeArtworkTitle = toSafeInlineText(artwork?.title, 'Untitled artwork');
+  const safeArtworkDescription = toSafeText(artwork?.description, { fallback: '' });
 
   const isAuthor = artwork?.author?._id === currentUser._id || artwork?.author?._id === currentUser.id;
   const highlightTimeoutRef = useRef(null);
@@ -520,9 +524,9 @@ export default function ArtworkPage() {
                 className="block transition hover:opacity-90"
               >
                 {authorAvatarUrl ? (
-                  <img src={authorAvatarUrl} alt={artwork.author?.username || 'Unknown'} className="feed-avatar" />
+                  <img src={authorAvatarUrl} alt={safeAuthorUsername} className="feed-avatar" />
                 ) : (
-                  <div className="feed-avatar-fallback">{artwork.author?.username?.[0]?.toUpperCase() || '?'}</div>
+                  <div className="feed-avatar-fallback">{toSafeInitial(artwork?.author?.username)}</div>
                 )}
               </Link>
             </div>
@@ -534,7 +538,7 @@ export default function ArtworkPage() {
                   {...getRoutePrefetchProps(`/profile/${artwork.author?._id}`)}
                   className="truncate font-semibold text-white transition hover:text-cyan-200"
                 >
-                  {artwork.author?.username || 'Unknown'}
+                  {safeAuthorUsername}
                 </Link>
                 {artwork.author?.creatorPlan === 'premium_artist' && (
                   <div className="flex items-center gap-1 rounded-full bg-amber-500/20 px-2 py-0.5 border border-amber-500/40">
@@ -547,15 +551,15 @@ export default function ArtworkPage() {
                   {...getRoutePrefetchProps(`/profile/${artwork.author?._id}`)}
                   className="text-slate-500 transition hover:text-cyan-200"
                 >
-                  @{artwork.author?.username || 'unknown'}
+                  @{safeAuthorUsername}
                 </Link>
                 <span className="text-slate-600">·</span>
                 <span className="text-slate-500">{formatRelative(artwork.createdAt)}</span>
               </div>
 
-              <h2 className="mt-4 detail-title">{artwork.title}</h2>
+              <h2 className="mt-4 detail-title">{safeArtworkTitle}</h2>
 
-              {artwork.description ? <p className="mt-4 text-lg leading-8 text-slate-300">{artwork.description}</p> : null}
+              {safeArtworkDescription ? <p className="mt-4 text-lg leading-8 text-slate-300">{safeArtworkDescription}</p> : null}
 
               {artworkTags.length > 0 ? (
                 <div className="mt-4 flex flex-wrap gap-2">
@@ -582,7 +586,7 @@ export default function ArtworkPage() {
                       >
                         <LazyImage
                           src={resolveImageSrc(image)}
-                          alt={`${artwork.title} - Preview ${index + 1}`}
+                          alt={`${safeArtworkTitle} - Preview ${index + 1}`}
                           fallbackSrc={'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23ddd" width="400" height="300"/%3E%3Ctext fill="%23999" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImage not available%3C/text%3E%3C/svg%3E'}
                           wrapperClassName="h-full w-full"
                           className="h-full w-full object-cover transition duration-300 hover:scale-[1.02]"
@@ -656,7 +660,7 @@ export default function ArtworkPage() {
               <div className="relative flex min-h-[22rem] flex-1 items-center justify-center bg-black px-4 py-6 lg:px-8">
                 <img
                   src={resolveImageSrc(activeImage)}
-                  alt={`${artwork.title} - Image ${currentImageIndex + 1}`}
+                  alt={`${safeArtworkTitle} - Image ${currentImageIndex + 1}`}
                   className="max-h-full max-w-full object-contain"
                   onError={(e) => {
                     console.error('Image load error:', activeImage);
@@ -676,7 +680,7 @@ export default function ArtworkPage() {
               <aside className="flex w-full flex-col border-t border-white/10 bg-slate-950/98 lg:w-[20rem] lg:border-l lg:border-t-0">
                 <div className="border-b border-white/10 px-5 py-4">
                   <p className="text-xs uppercase tracking-[0.28em] text-slate-500">Artwork viewer</p>
-                  <h2 className="mt-2 text-lg font-semibold text-white">{artwork.title}</h2>
+                  <h2 className="mt-2 text-lg font-semibold text-white">{safeArtworkTitle}</h2>
                   <p className="mt-1 text-sm text-slate-400">Image {currentImageIndex + 1} of {artworkImages.length}</p>
                 </div>
 
@@ -691,7 +695,7 @@ export default function ArtworkPage() {
                       <div className="h-20 w-20 overflow-hidden rounded-[1rem] bg-slate-900">
                         <LazyImage
                           src={resolveImageSrc(image)}
-                          alt={`${artwork.title} thumbnail ${index + 1}`}
+                          alt={`${safeArtworkTitle} thumbnail ${index + 1}`}
                           fallbackSrc={'data:image/svg+xml,%3Csvg xmlns="http://www.w3.org/2000/svg" width="400" height="300"%3E%3Crect fill="%23ddd" width="400" height="300"/%3E%3Ctext fill="%23999" x="50%25" y="50%25" text-anchor="middle" dy=".3em"%3EImage not available%3C/text%3E%3C/svg%3E'}
                           wrapperClassName="h-full w-full"
                           className="h-full w-full object-cover"
@@ -774,7 +778,7 @@ export default function ArtworkPage() {
               >
                 <div className="mb-2 flex items-center justify-between gap-4">
                   <div className="flex items-center gap-3">
-                    <span className="font-semibold text-white">{comment.user?.username || 'Anonymous'}</span>
+                    <span className="font-semibold text-white">{toSafeInlineText(comment.user?.username, 'Anonymous')}</span>
                     <span className="text-sm text-slate-400">{new Date(comment.createdAt).toLocaleString()}</span>
                   </div>
                   {comment.user?._id === currentUser._id || comment.user?._id === currentUser.id ? (
@@ -787,7 +791,7 @@ export default function ArtworkPage() {
                     </button>
                   ) : null}
                 </div>
-                <p className="text-slate-300">{comment.text}</p>
+                <p className="text-slate-300">{toSafeText(comment.text)}</p>
               </div>
             ))
           )}

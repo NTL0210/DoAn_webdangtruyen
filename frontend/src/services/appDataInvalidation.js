@@ -3,6 +3,7 @@ import { FRONTEND_CACHE_NAMESPACES, invalidateFrontendCache } from './frontendCa
 export function invalidateContentMutationCaches({ includeTagDirectory = false } = {}) {
   const namespaces = [
     FRONTEND_CACHE_NAMESPACES.HOME_FEED,
+    FRONTEND_CACHE_NAMESPACES.MEMBERSHIP_FEED,
     FRONTEND_CACHE_NAMESPACES.TRENDING,
     FRONTEND_CACHE_NAMESPACES.CONTENT_SEARCH,
     FRONTEND_CACHE_NAMESPACES.PROFILE,

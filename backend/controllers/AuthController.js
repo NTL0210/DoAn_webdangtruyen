@@ -9,6 +9,7 @@ import AccountAppeal from '../models/AccountAppeal.js';
 import webSocketManager from '../websocket/WebSocketManager.js';
 import { clearExpiredPostingRestriction, getPermanentBanDeletionDeadline, serializePermanentBan, serializePostingRestriction } from '../utils/moderation.js';
 import { pruneUserSavedContentReferences } from '../utils/savedContent.js';
+import { sanitizeUserText } from '../utils/textSanitizer.js';
 
 function signAppealToken(userId) {
   return jwt.sign(
@@ -718,8 +719,10 @@ export async function resendLoginOtp(req, res) {
 export async function submitAccountAppeal(req, res) {
   try {
     const { appealToken, reason, evidence } = req.body;
+    const normalizedReason = sanitizeUserText(reason, { preserveLineBreaks: true });
+    const normalizedEvidence = sanitizeUserText(evidence, { preserveLineBreaks: true });
 
-    if (!appealToken || !String(reason || '').trim()) {
+    if (!appealToken || !normalizedReason) {
       return res.status(400).json({
         success: false,
         error: {
@@ -798,8 +801,8 @@ export async function submitAccountAppeal(req, res) {
       user: user._id,
       banReason: user.permanentBanReason,
       bannedAt: user.permanentlyBannedAt,
-      appealReason: String(reason).trim(),
-      evidence: String(evidence || '').trim()
+      appealReason: normalizedReason,
+      evidence: normalizedEvidence
     });
 
     const admins = await User.find({ role: 'admin' }).select('_id');

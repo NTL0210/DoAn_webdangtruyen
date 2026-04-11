@@ -11,7 +11,8 @@ import { processExpiredPermanentBanDeletions } from '../../services/permanentBan
 
 vi.mock('../../websocket/WebSocketManager.js', () => ({
   default: {
-    sendNotification: vi.fn().mockResolvedValue(null)
+    sendNotification: vi.fn().mockResolvedValue(null),
+    sendAccountState: vi.fn().mockResolvedValue(null)
   }
 }));
 

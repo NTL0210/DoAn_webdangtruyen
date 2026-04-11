@@ -1,16 +1,78 @@
 import Notification from '../models/Notification.js';
 
-// Get user's notifications
-export async function getNotifications(req, res) {
+function parseBooleanQuery(value) {
+  if (typeof value !== 'string') {
+    return false;
+  }
+
+  return value === '1' || value.toLowerCase() === 'true';
+}
+
+function buildNotificationQuery(req) {
+  const query = { recipient: req.user.userId };
+
+  if (parseBooleanQuery(req.query.unreadOnly)) {
+    query.read = false;
+  }
+
+  if (req.query.since) {
+    const sinceDate = new Date(req.query.since);
+
+    if (!Number.isNaN(sinceDate.getTime())) {
+      query.createdAt = { $gt: sinceDate };
+    }
+  }
+
+  return query;
+}
+
+export async function getNotificationSummary(req, res) {
   try {
-    const notifications = await Notification.find({ recipient: req.user.userId })
-      .populate('from', 'username avatar')
-      .sort({ createdAt: -1 })
-      .limit(50);
+    const [unreadCount, latestNotification] = await Promise.all([
+      Notification.countDocuments({ recipient: req.user.userId, read: false }),
+      Notification.findOne({ recipient: req.user.userId })
+        .sort({ createdAt: -1 })
+        .select('createdAt')
+        .lean()
+    ]);
 
     return res.status(200).json({
       success: true,
-      data: notifications
+      data: {
+        unreadCount,
+        latestCreatedAt: latestNotification?.createdAt || null
+      }
+    });
+  } catch (error) {
+    console.error('Get notification summary error:', error);
+    return res.status(500).json({
+      success: false,
+      error: {
+        code: 'INTERNAL_ERROR',
+        message: 'An unexpected error occurred'
+      }
+    });
+  }
+}
+
+// Get user's notifications
+export async function getNotifications(req, res) {
+  try {
+    const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || 30, 1), 50);
+    const notifications = await Notification.find(buildNotificationQuery(req))
+      .select('recipient type from contentId commentId commentPreview commentDeleted contentType contentTitle contentDeleted message read createdAt')
+      .populate('from', 'username avatar')
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .lean();
+
+    return res.status(200).json({
+      success: true,
+      data: notifications,
+      pagination: {
+        limit,
+        total: notifications.length
+      }
     });
   } catch (error) {
     console.error('Get notifications error:', error);

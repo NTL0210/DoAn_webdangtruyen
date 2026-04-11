@@ -3,8 +3,9 @@ import { useEffect, useState } from 'react';
 import { useLocation, Link } from 'react-router-dom';
 import { ThemeToggler } from '../ThemeToggler';
 import { getCurrentUser, getToken, subscribeToCurrentUserChange } from '../../services/authService';
-import { subscribeToNotificationChanges } from '../../services/notificationService';
+import { subscribeToNotificationChanges, subscribeToNotificationSocketState } from '../../services/notificationService';
 import { getRoutePrefetchProps } from '../../services/routePrefetch';
+import { toSafeInitial, toSafeInlineText } from '../../utils/safeText';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -28,6 +29,28 @@ export function Topbar() {
   const location = useLocation();
   const [user, setUser] = useState(() => getCurrentUser());
   const [unreadCount, setUnreadCount] = useState(0);
+  const safeUsername = toSafeInlineText(user?.username, 'Unknown');
+
+  const fetchNotificationSummary = async () => {
+    if (!getToken()) {
+      setUnreadCount(0);
+      return;
+    }
+
+    try {
+      const response = await fetch(`${API_URL}/api/notifications/summary`, {
+        headers: {
+          Authorization: `Bearer ${getToken()}`
+        }
+      });
+      const data = await response.json();
+      if (data.success) {
+        setUnreadCount(Number(data.data?.unreadCount) || 0);
+      }
+    } catch (error) {
+      console.error('Failed to load notification count:', error);
+    }
+  };
 
   useEffect(() => subscribeToCurrentUserChange(setUser), []);
 
@@ -37,23 +60,40 @@ export function Topbar() {
       return;
     }
 
-    const fetchNotifications = async () => {
-      try {
-        const response = await fetch(`${API_URL}/api/notifications`, {
-          headers: {
-            Authorization: `Bearer ${getToken()}`
-          }
-        });
-        const data = await response.json();
-        if (data.success) {
-          setUnreadCount((data.data || []).filter((item) => !item.read).length);
-        }
-      } catch (error) {
-        console.error('Failed to load notification count:', error);
+    fetchNotificationSummary();
+  }, [user]);
+
+  useEffect(() => {
+    if (!user) {
+      return undefined;
+    }
+
+    const handleRefresh = () => {
+      fetchNotificationSummary();
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleRefresh();
       }
     };
 
-    fetchNotifications();
+    const unsubscribeSocketState = subscribeToNotificationSocketState((payload) => {
+      if (payload?.type === 'open') {
+        handleRefresh();
+      }
+    });
+
+    window.addEventListener('focus', handleRefresh);
+    window.addEventListener('online', handleRefresh);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      unsubscribeSocketState();
+      window.removeEventListener('focus', handleRefresh);
+      window.removeEventListener('online', handleRefresh);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, [user]);
 
   useEffect(() => {
@@ -111,17 +151,17 @@ export function Topbar() {
             {user.avatar ? (
               <img 
                 src={`${API_URL}${user.avatar}`} 
-                alt={user.username}
+                alt={safeUsername}
                 className="h-9 w-9 rounded-full object-cover"
               />
             ) : (
               <div className="user-avatar-fallback h-9 w-9 text-sm">
-                {user.username?.[0]?.toUpperCase() || '?'}
+                {toSafeInitial(user?.username)}
               </div>
             )}
             <div className="hidden text-left md:block">
-              <p className="text-sm font-medium text-white">{user.username}</p>
-              <p className="text-xs text-slate-400">@{user.username}</p>
+              <p className="text-sm font-medium text-white">{safeUsername}</p>
+              <p className="text-xs text-slate-400">@{safeUsername}</p>
             </div>
           </Link>
         ) : null}

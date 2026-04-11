@@ -9,6 +9,7 @@ import { buildTagSearchConditions, normalizeTagsForQuery, parseTagsInput } from 
 import { escapeRegex, normalizeSearchText, tokenizeSearchText } from '../utils/search.js';
 import { CACHE_NAMESPACES, getOrSetNamespacedCache, invalidateCacheNamespaces } from '../services/cacheStore.js';
 import { canAccessPremiumContent, canPublishSubscriberOnlyContent } from '../services/subscriptionService.js';
+import { buildMediaSummary, createLegacyImageAsset, deleteImageAssetFiles, normalizeImageAssets } from '../utils/imageVariants.js';
 import { removeContentFromAllSavedCollections } from '../utils/savedContent.js';
 import webSocketManager from '../websocket/WebSocketManager.js';
 
@@ -18,6 +19,21 @@ const DEFAULT_TAG_DIRECTORY_LIMIT = 24;
 const MAX_TAG_DIRECTORY_LIMIT = 100;
 const DEFAULT_HOME_FEED_LIMIT = 10;
 const MAX_HOME_FEED_LIMIT = 20;
+const DEFAULT_SEARCH_LIMIT = 24;
+const MAX_SEARCH_LIMIT = 24;
+
+const FEED_CONTENT_SELECT = 'title description images imageAssets mediaSummary tags likes bookmarks views createdAt author isPremium';
+
+function populateFeedAuthor(query) {
+  return query.populate('author', 'username avatar');
+}
+
+function withContentType(items, contentType) {
+  return items.map((item) => ({
+    ...item,
+    contentType
+  }));
+}
 
 function buildRequiredHashtagError() {
   return {
@@ -281,12 +297,15 @@ function buildNextFeedCursor(item, sortBy) {
 async function fetchNewestFeedItemsForModel(Model, baseQuery, cursor, limit) {
   const cursorCondition = buildNewestCursorCondition(cursor);
   const query = combineMongoQuery(baseQuery, cursorCondition);
+  const contentType = Model.modelName === 'Story' ? 'story' : 'artwork';
 
-  return Model.find(query)
+  const items = await populateFeedAuthor(Model.find(query)
+    .select(FEED_CONTENT_SELECT)
     .sort({ createdAt: -1, _id: -1 })
     .limit(limit + 1)
-    .populate('author', 'username avatar')
-    .lean();
+    .lean());
+
+  return withContentType(items, contentType);
 }
 
 function buildPremiumFeedAuthorProjection() {
@@ -296,20 +315,26 @@ function buildPremiumFeedAuthorProjection() {
 async function fetchNewestPremiumFeedItemsForModel(Model, baseQuery, cursor, limit) {
   const cursorCondition = buildNewestCursorCondition(cursor);
   const query = combineMongoQuery(baseQuery, cursorCondition);
+  const contentType = Model.modelName === 'Story' ? 'story' : 'artwork';
 
-  return Model.find(query)
+  const items = await Model.find(query)
+    .select(`${FEED_CONTENT_SELECT} content`)
     .sort({ createdAt: -1, _id: -1 })
     .limit(limit + 1)
     .populate('author', buildPremiumFeedAuthorProjection())
     .lean();
+
+  return withContentType(items, contentType);
 }
 
-function buildTrendingProjection() {
+function buildTrendingProjection(contentType) {
   return {
+    contentType: { $literal: contentType },
     title: 1,
     description: 1,
-    content: 1,
     images: 1,
+    imageAssets: 1,
+    mediaSummary: 1,
     tags: 1,
     likes: 1,
     bookmarks: 1,
@@ -330,6 +355,8 @@ function buildPremiumTrendingProjection() {
     description: 1,
     content: 1,
     images: 1,
+    imageAssets: 1,
+    mediaSummary: 1,
     tags: 1,
     isPremium: 1,
     likes: 1,
@@ -351,6 +378,7 @@ function buildPremiumTrendingProjection() {
 }
 
 async function fetchTrendingFeedItemsForModel(Model, baseQuery, cursor, limit) {
+  const contentType = Model.modelName === 'Story' ? 'story' : 'artwork';
   const pipeline = [
     { $match: baseQuery },
     {
@@ -383,7 +411,7 @@ async function fetchTrendingFeedItemsForModel(Model, baseQuery, cursor, limit) {
       $unwind: '$author'
     },
     {
-      $project: buildTrendingProjection()
+      $project: buildTrendingProjection(contentType)
     },
     {
       $sort: {
@@ -397,10 +425,12 @@ async function fetchTrendingFeedItemsForModel(Model, baseQuery, cursor, limit) {
     }
   );
 
-  return Model.aggregate(pipeline);
+  const items = await Model.aggregate(pipeline);
+  return withContentType(items, contentType);
 }
 
 async function fetchTrendingPremiumFeedItemsForModel(Model, baseQuery, cursor, limit) {
+  const contentType = Model.modelName === 'Story' ? 'story' : 'artwork';
   const pipeline = [
     { $match: baseQuery },
     {
@@ -447,7 +477,8 @@ async function fetchTrendingPremiumFeedItemsForModel(Model, baseQuery, cursor, l
     }
   );
 
-  return Model.aggregate(pipeline);
+  const items = await Model.aggregate(pipeline);
+  return withContentType(items, contentType);
 }
 
 async function loadHomeFeedPage({ sortBy, type, rawQuery, tag, cursor, limit }) {
@@ -507,7 +538,7 @@ async function enrichPremiumFeedItemsWithAccess(items, viewerUserId) {
 }
 
 function buildPremiumTeaserItem(item, accessMap) {
-  const isStory = Object.prototype.hasOwnProperty.call(item, 'content');
+  const isStory = item.contentType === 'story' || (item.contentType === undefined && Object.prototype.hasOwnProperty.call(item, 'content'));
   const artistId = String(item.author?._id || item.author || '');
   const activeSubscription = accessMap.get(artistId) || null;
   const teaserSource = item.description || item.content || item.title || '';
@@ -516,6 +547,8 @@ function buildPremiumTeaserItem(item, accessMap) {
     _id: item._id,
     title: item.title,
     description: item.description || '',
+    imageAssets: item.imageAssets || [],
+    mediaSummary: item.mediaSummary || null,
     teaserText: buildMaskedPreviewText(teaserSource, isStory ? 150 : 110),
     tags: item.tags || [],
     createdAt: item.createdAt,
@@ -639,6 +672,65 @@ function resolveImagesFromRequest(req) {
   }
 
   return [...existingImages, ...uploadedImages];
+}
+
+function buildResolvedMediaPayload(imageAssets = []) {
+  const normalizedAssets = normalizeImageAssets(imageAssets);
+
+  return {
+    images: normalizedAssets.map((asset) => asset.originalUrl),
+    imageAssets: normalizedAssets,
+    mediaSummary: buildMediaSummary(normalizedAssets)
+  };
+}
+
+function resolveMediaPayloadFromRequest(req, { existingImageAssets = [], fallbackImages = [] } = {}) {
+  const uploadedAssets = Array.isArray(req.files)
+    ? req.files.map((file) => file.imageAsset).filter(Boolean)
+    : req.file?.imageAsset
+      ? [req.file.imageAsset]
+      : [];
+
+  const requestedExistingImages = collectExistingImages(req.body.images);
+  const imageOrder = parseImageOrder(req.body.imageOrder);
+  const normalizedExistingAssets = normalizeImageAssets(existingImageAssets, fallbackImages);
+  const existingAssetMap = new Map(normalizedExistingAssets.map((asset) => [asset.originalUrl, asset]));
+  const resolveExistingAsset = (url) => existingAssetMap.get(url) || createLegacyImageAsset(url);
+
+  if (!imageOrder.length) {
+    const preservedExistingUrls = requestedExistingImages.length
+      ? requestedExistingImages
+      : normalizedExistingAssets.map((asset) => asset.originalUrl);
+
+    return buildResolvedMediaPayload([
+      ...preservedExistingUrls.map((url) => resolveExistingAsset(url)).filter(Boolean),
+      ...uploadedAssets
+    ]);
+  }
+
+  const orderedAssets = [];
+  let nextUploadIndex = 0;
+
+  imageOrder.forEach((entry) => {
+    if (entry.kind === 'existing' && typeof entry.value === 'string' && entry.value.trim()) {
+      orderedAssets.push(resolveExistingAsset(entry.value.trim()));
+      return;
+    }
+
+    if (entry.kind === 'new' && uploadedAssets[nextUploadIndex]) {
+      orderedAssets.push(uploadedAssets[nextUploadIndex]);
+      nextUploadIndex += 1;
+    }
+  });
+
+  if (orderedAssets.length) {
+    return buildResolvedMediaPayload(orderedAssets);
+  }
+
+  return buildResolvedMediaPayload([
+    ...normalizedExistingAssets,
+    ...uploadedAssets
+  ]);
 }
 
 async function updateReadingHistory(userId, contentId, contentType) {
@@ -1053,7 +1145,7 @@ export async function createStory(req, res) {
       return res.status(400).json(buildRequiredHashtagError());
     }
 
-    const images = resolveImagesFromRequest(req);
+    const mediaPayload = resolveMediaPayloadFromRequest(req);
 
     if (nextIsPremium) {
       const canPublishPremium = await resolvePremiumPublishPermission(req.user.userId);
@@ -1073,7 +1165,9 @@ export async function createStory(req, res) {
       description,
       content,
       tags: parsedTags.tags,
-      images,
+      images: mediaPayload.images,
+      imageAssets: mediaPayload.imageAssets,
+      mediaSummary: mediaPayload.mediaSummary,
       author: req.user.userId,
       status: normalizePublishStatus(status),
       isPremium: nextIsPremium
@@ -1116,7 +1210,6 @@ export async function createArtwork(req, res) {
     
     const { title, description, status, isPremium } = req.body;
     const nextIsPremium = isPremium === 'true' || isPremium === true;
-    let images = [];
     const parsedTags = parseTagsInput(req.body.tags, {
       strictHashtagFormat: typeof req.body.tags === 'string'
     });
@@ -1137,14 +1230,14 @@ export async function createArtwork(req, res) {
     }
 
     // Handle uploaded files
-    images = resolveImagesFromRequest(req);
+    const mediaPayload = resolveMediaPayloadFromRequest(req);
     console.log('Image URLs from body:', req.body.images);
 
-    console.log('Final images array:', images);
+    console.log('Final images array:', mediaPayload.images);
     console.log('Final tags array:', parsedTags.tags);
 
     // Validate that we have at least one image
-    if (!images || images.length === 0) {
+    if (!mediaPayload.images || mediaPayload.images.length === 0) {
       return res.status(400).json({
         success: false,
         error: {
@@ -1170,7 +1263,9 @@ export async function createArtwork(req, res) {
     const artwork = new Artwork({
       title,
       description,
-      images,
+      images: mediaPayload.images,
+      imageAssets: mediaPayload.imageAssets,
+      mediaSummary: mediaPayload.mediaSummary,
       tags: parsedTags.tags,
       author: req.user.userId,
       status: normalizePublishStatus(status),
@@ -1414,8 +1509,9 @@ export async function getMembershipFeed(req, res) {
 export async function searchContent(req, res) {
   try {
     const { q, tags, page = 1, status, type } = req.query;
-    const limit = 50;
-    const skip = (page - 1) * limit;
+    const normalizedPage = Math.max(Number.parseInt(page, 10) || 1, 1);
+    const limit = Math.min(Math.max(Number.parseInt(req.query.limit, 10) || DEFAULT_SEARCH_LIMIT, 1), MAX_SEARCH_LIMIT);
+    const skip = (normalizedPage - 1) * limit;
     const rawQuery = String(q || '').trim();
     const normalizedQuery = normalizeSearchText(rawQuery);
     const normalizedTokens = tokenizeSearchText(rawQuery);
@@ -1470,39 +1566,35 @@ export async function searchContent(req, res) {
     }
 
     let results = [];
+    const storyQuery = Story.find(query)
+      .select(FEED_CONTENT_SELECT)
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .skip(skip)
+      .populate('author', 'username avatar')
+      .lean();
+    const artworkQuery = Artwork.find(query)
+      .select(FEED_CONTENT_SELECT)
+      .sort({ createdAt: -1 })
+      .limit(limit)
+      .skip(skip)
+      .populate('author', 'username avatar')
+      .lean();
 
     // Filter by type if specified
     if (type === 'story') {
-      const stories = await Story.find(query)
-        .populate('author', 'username avatar')
-        .sort({ createdAt: -1 })
-        .limit(limit)
-        .skip(skip);
-      results = stories;
+      results = withContentType(await storyQuery, 'story');
     } else if (type === 'artwork') {
-      const artworks = await Artwork.find(query)
-        .populate('author', 'username avatar')
-        .sort({ createdAt: -1 })
-        .limit(limit)
-        .skip(skip);
-      results = artworks;
+      results = withContentType(await artworkQuery, 'artwork');
     } else {
       // Search in both stories and artworks
       const [stories, artworks] = await Promise.all([
-        Story.find(query)
-          .populate('author', 'username avatar')
-          .sort({ createdAt: -1 })
-          .limit(limit)
-          .skip(skip),
-        Artwork.find(query)
-          .populate('author', 'username avatar')
-          .sort({ createdAt: -1 })
-          .limit(limit)
-          .skip(skip)
+        storyQuery,
+        artworkQuery
       ]);
 
       // Combine and sort results
-      results = [...stories, ...artworks]
+      results = [...withContentType(stories, 'story'), ...withContentType(artworks, 'artwork')]
         .sort((a, b) => b.createdAt - a.createdAt)
         .slice(0, limit);
     }
@@ -1511,7 +1603,7 @@ export async function searchContent(req, res) {
       success: true,
       data: results,
       pagination: {
-        page: parseInt(page),
+        page: normalizedPage,
         limit,
         total: results.length
       }
@@ -1584,6 +1676,7 @@ export async function updateContent(req, res) {
 
     const nextStatus = normalizePublishStatus(req.body.status ?? content.status);
     const nextIsPremium = req.body.isPremium === 'true' || req.body.isPremium === true;
+    const previousImageAssets = normalizeImageAssets(content.imageAssets, content.images);
 
     if (nextIsPremium) {
       const canPublishPremium = await resolvePremiumPublishPermission(req.user.userId);
@@ -1615,14 +1708,22 @@ export async function updateContent(req, res) {
         });
       }
 
-      const images = resolveImagesFromRequest(req);
+      const mediaPayload = resolveMediaPayloadFromRequest(req, {
+        existingImageAssets: content.imageAssets,
+        fallbackImages: content.images
+      });
 
       content.content = req.body.content;
-      content.images = images;
+      content.images = mediaPayload.images;
+      content.imageAssets = mediaPayload.imageAssets;
+      content.mediaSummary = mediaPayload.mediaSummary;
     } else {
-      const images = resolveImagesFromRequest(req);
+      const mediaPayload = resolveMediaPayloadFromRequest(req, {
+        existingImageAssets: content.imageAssets,
+        fallbackImages: content.images
+      });
 
-      if (images.length === 0) {
+      if (mediaPayload.images.length === 0) {
         return res.status(400).json({
           success: false,
           error: {
@@ -1632,12 +1733,19 @@ export async function updateContent(req, res) {
         });
       }
 
-      content.images = images;
+      content.images = mediaPayload.images;
+      content.imageAssets = mediaPayload.imageAssets;
+      content.mediaSummary = mediaPayload.mediaSummary;
     }
 
     await content.save();
     await content.populate('author', 'username avatar');
     await invalidateContentDiscoveryCache();
+
+    const nextImageAssetUrls = new Set(normalizeImageAssets(content.imageAssets, content.images).map((asset) => asset.originalUrl));
+    const removedImageAssets = previousImageAssets.filter((asset) => asset.originalUrl && !nextImageAssetUrls.has(asset.originalUrl));
+
+    await deleteImageAssetFiles(removedImageAssets);
 
     if (previousStatus !== 'approved' && content.status === 'approved') {
       await notifyFollowersAboutNewPost({

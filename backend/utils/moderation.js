@@ -1,8 +1,10 @@
 export const POSTING_RESTRICTION_DAYS = 3;
 export const PERMANENT_BAN_APPEAL_WINDOW_DAYS = 5;
 
+import { sanitizeUserText } from './textSanitizer.js';
+
 export function normalizeModerationReason(reason) {
-  return String(reason || '').trim();
+  return sanitizeUserText(reason, { preserveLineBreaks: true });
 }
 
 export function addDays(date, days) {

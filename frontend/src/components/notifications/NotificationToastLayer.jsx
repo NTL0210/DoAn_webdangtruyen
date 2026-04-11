@@ -4,9 +4,15 @@ import { useEffect, useRef, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatedList } from '../ui/animated-list';
 import { getCurrentUser, getToken, subscribeToCurrentUserChange } from '../../services/authService';
-import { emitNotificationChange, subscribeToNotificationChanges, subscribeToNotifications } from '../../services/notificationService';
+import {
+  emitNotificationChange,
+  subscribeToNotificationChanges,
+  subscribeToNotifications,
+  subscribeToNotificationSocketState
+} from '../../services/notificationService';
 import { getNotificationLink, getNotificationPresentation } from '../../utils/notifications';
 import { formatRelative } from '../../utils/helpers';
+import { toSafeInitial, toSafeInlineText, toSafeText } from '../../utils/safeText';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const TOAST_LIFETIME = 7000;
@@ -223,6 +229,50 @@ export function NotificationToastLayer() {
   const navigate = useNavigate();
   const currentUserId = currentUser?._id || currentUser?.id || null;
 
+  const syncMissedNotifications = async () => {
+    if (!currentUserId || !getToken()) {
+      return;
+    }
+
+    try {
+      const params = new URLSearchParams({
+        unreadOnly: '1',
+        limit: '20'
+      });
+      const lastSyncedAt = readToastSyncTimestamp(currentUserId);
+
+      if (lastSyncedAt) {
+        params.set('since', new Date(lastSyncedAt).toISOString());
+      }
+
+      const response = await fetch(`${API_URL}/api/notifications?${params.toString()}`, {
+        headers: {
+          Authorization: `Bearer ${getToken()}`
+        }
+      });
+
+      const data = await response.json();
+
+      if (!data.success) {
+        return;
+      }
+
+      const notifications = Array.isArray(data.data) ? data.data : [];
+      notifications
+        .slice(0, 50)
+        .reverse()
+        .forEach((notification) => {
+          pushToast(notification);
+        });
+
+      if (notifications[0]?.createdAt) {
+        writeToastSyncTimestamp(currentUserId, notifications[0].createdAt);
+      }
+    } catch (error) {
+      console.error('Failed to sync missed notification toasts:', error);
+    }
+  };
+
   const clearTimer = (toastId) => {
     const timer = timersRef.current.get(toastId);
 
@@ -316,50 +366,37 @@ export function NotificationToastLayer() {
     }
 
     let cancelled = false;
+    syncMissedNotifications();
 
-    const syncMissedNotifications = async () => {
-      try {
-        const response = await fetch(`${API_URL}/api/notifications`, {
-          headers: {
-            Authorization: `Bearer ${getToken()}`
-          }
-        });
-
-        const data = await response.json();
-
-        if (!data.success || cancelled) {
-          return;
-        }
-
-        const notifications = Array.isArray(data.data) ? data.data : [];
-        const unreadNotifications = notifications.filter((item) => !item.read);
-        const lastSyncedAt = readToastSyncTimestamp(currentUserId);
-
-        const notificationsToToast = lastSyncedAt
-          ? unreadNotifications.filter((item) => new Date(item.createdAt).getTime() > lastSyncedAt)
-          : unreadNotifications;
-
-        notificationsToToast
-          .slice(0, 50)
-          .reverse()
-          .forEach((notification) => {
-            pushToast(notification);
-          });
-
-        if (notifications[0]?.createdAt) {
-          writeToastSyncTimestamp(currentUserId, notifications[0].createdAt);
-        }
-      } catch (error) {
-        console.error('Failed to sync missed notification toasts:', error);
+    const handleVisibilityChange = () => {
+      if (!cancelled && document.visibilityState === 'visible') {
+        syncMissedNotifications();
       }
     };
 
-    syncMissedNotifications();
+    const handleFocus = () => {
+      if (!cancelled) {
+        syncMissedNotifications();
+      }
+    };
+
+    window.addEventListener('focus', handleFocus);
+    window.addEventListener('online', handleFocus);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
 
     return () => {
       cancelled = true;
+      window.removeEventListener('focus', handleFocus);
+      window.removeEventListener('online', handleFocus);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
     };
   }, [currentUserId]);
+
+  useEffect(() => subscribeToNotificationSocketState((payload) => {
+    if (payload?.type === 'open') {
+      syncMissedNotifications();
+    }
+  }), [currentUserId]);
 
   useEffect(() => () => {
     timersRef.current.forEach((timer) => window.clearTimeout(timer));
@@ -418,6 +455,9 @@ export function NotificationToastLayer() {
           const { Icon, name } = getNotificationPresentation(notification);
           const summary = getToastSummary(toast);
           const theme = getToastTheme(notification);
+          const safeHeading = toSafeInlineText(summary.heading, 'Notification');
+          const safeDescription = toSafeText(summary.description);
+          const safeFromUsername = toSafeInlineText(notification.from?.username, 'System');
 
           return (
             <motion.article
@@ -435,8 +475,8 @@ export function NotificationToastLayer() {
 
                   <div className="min-w-0 flex-1">
                     <p className="text-[11px] uppercase tracking-[0.28em] text-slate-500">{name}</p>
-                    <h3 className="mt-1 text-base font-semibold text-white">{summary.heading}</h3>
-                    <p className="mt-1 text-sm leading-6 text-slate-300">{summary.description}</p>
+                    <h3 className="mt-1 text-base font-semibold text-white">{safeHeading}</h3>
+                    <p className="mt-1 text-sm leading-6 text-slate-300">{safeDescription}</p>
                   </div>
                 </div>
 
@@ -445,12 +485,12 @@ export function NotificationToastLayer() {
                     {notification.from?.avatar ? (
                       <img
                         src={notification.from.avatar.startsWith('http') ? notification.from.avatar : `${API_URL}${notification.from.avatar}`}
-                        alt={notification.from.username}
+                        alt={safeFromUsername}
                         className="h-9 w-9 rounded-full object-cover"
                       />
                     ) : (
                       <div className="flex h-9 w-9 items-center justify-center rounded-full bg-white/10 text-sm font-semibold text-white">
-                        {notification.from?.username?.[0]?.toUpperCase() || '!'}
+                        {toSafeInitial(notification.from?.username, '!')}
                       </div>
                     )}
                     <span className="truncate text-xs text-slate-400">{formatRelative(notification.createdAt)}</span>

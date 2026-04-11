@@ -3,6 +3,7 @@ import { connectNotificationSocket, disconnectNotificationSocket } from './notif
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const AUTH_USER_CHANGED_EVENT = 'auth-user-changed';
 const LOGIN_NOTICE_KEY = 'post-login-notice';
+const FORCED_BAN_STATE_KEY = 'forced-ban-state';
 
 function emitAuthUserChanged(user) {
   window.dispatchEvent(new CustomEvent(AUTH_USER_CHANGED_EVENT, {
@@ -11,8 +12,31 @@ function emitAuthUserChanged(user) {
 }
 
 export function setCurrentUser(user) {
-  localStorage.setItem('user', JSON.stringify(user));
+  if (user) {
+    localStorage.setItem('user', JSON.stringify(user));
+  } else {
+    localStorage.removeItem('user');
+  }
+
   emitAuthUserChanged(user);
+}
+
+export function patchCurrentUser(userPatch) {
+  const currentUser = getCurrentUser();
+
+  if (!currentUser || !userPatch) {
+    return currentUser;
+  }
+
+  const nextUser = {
+    ...currentUser,
+    ...userPatch,
+    id: userPatch.id || currentUser.id,
+    _id: userPatch._id || currentUser._id
+  };
+
+  setCurrentUser(nextUser);
+  return nextUser;
 }
 
 export function subscribeToCurrentUserChange(callback) {
@@ -38,6 +62,23 @@ export function subscribeToCurrentUserChange(callback) {
 export function queuePostLoginNotice(notice) {
   if (!notice) return;
   sessionStorage.setItem(LOGIN_NOTICE_KEY, JSON.stringify(notice));
+}
+
+export function queueForcedBanState(state) {
+  if (!state) return;
+  sessionStorage.setItem(FORCED_BAN_STATE_KEY, JSON.stringify(state));
+}
+
+export function consumeForcedBanState() {
+  const raw = sessionStorage.getItem(FORCED_BAN_STATE_KEY);
+  if (!raw) return null;
+  sessionStorage.removeItem(FORCED_BAN_STATE_KEY);
+
+  try {
+    return JSON.parse(raw);
+  } catch {
+    return null;
+  }
 }
 
 export function consumePostLoginNotice() {
@@ -143,8 +184,7 @@ export async function register(username, email, password) {
 // Logout user
 export function logout() {
   localStorage.removeItem('token');
-  localStorage.removeItem('user');
-  emitAuthUserChanged(null);
+  setCurrentUser(null);
   disconnectNotificationSocket();
 }
 

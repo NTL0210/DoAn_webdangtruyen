@@ -1,9 +1,7 @@
-import { useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { getRoutePrefetchProps } from '../services/routePrefetch';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
-const FEED_TAB_SLIDE_MS = 220;
 
 const FEED_TABS = [
   { key: 'home', label: 'For you', to: '/home' },
@@ -26,21 +24,19 @@ function getAvatarUrl(avatar) {
 
 export function FeedTabs({ activeTab }) {
   const navigate = useNavigate();
-  const [visualActiveTab, setVisualActiveTab] = useState(activeTab);
-  const navigationTimeoutRef = useRef(null);
 
-  useEffect(() => {
-    setVisualActiveTab(activeTab);
-  }, [activeTab]);
+  const navigateToTab = (to, options = {}) => {
+    const performNavigation = () => navigate(to, options);
 
-  useEffect(
-    () => () => {
-      if (navigationTimeoutRef.current) {
-        window.clearTimeout(navigationTimeoutRef.current);
-      }
-    },
-    []
-  );
+    if (typeof document !== 'undefined' && typeof document.startViewTransition === 'function') {
+      document.startViewTransition(() => {
+        performNavigation();
+      });
+      return;
+    }
+
+    performNavigation();
+  };
 
   const handleTabClick = (event, tab) => {
     const isModifiedClick = event.metaKey || event.altKey || event.ctrlKey || event.shiftKey;
@@ -53,6 +49,7 @@ export function FeedTabs({ activeTab }) {
       event.preventDefault();
       navigate(tab.to, {
         replace: true,
+        preventScrollReset: true,
         state: {
           feedTab: tab.key,
           feedRefreshKey: Date.now()
@@ -62,19 +59,11 @@ export function FeedTabs({ activeTab }) {
     }
 
     event.preventDefault();
-
-    if (navigationTimeoutRef.current) {
-      window.clearTimeout(navigationTimeoutRef.current);
-    }
-
-    setVisualActiveTab(tab.key);
-    navigationTimeoutRef.current = window.setTimeout(() => {
-      navigate(tab.to);
-    }, FEED_TAB_SLIDE_MS);
+    navigateToTab(tab.to, { preventScrollReset: true });
   };
 
   const activeIndex = Math.max(
-    FEED_TABS.findIndex((tab) => tab.key === visualActiveTab),
+    FEED_TABS.findIndex((tab) => tab.key === activeTab),
     0
   );
 
@@ -95,7 +84,7 @@ export function FeedTabs({ activeTab }) {
           {...getRoutePrefetchProps(tab.to)}
           onClick={(event) => handleTabClick(event, tab)}
           aria-current={activeTab === tab.key ? 'page' : undefined}
-          className={`feed-tab ${visualActiveTab === tab.key ? 'feed-tab-active' : ''}`}
+          className={`feed-tab ${activeTab === tab.key ? 'feed-tab-active' : ''}`}
         >
           {tab.label}
         </Link>

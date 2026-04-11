@@ -7,9 +7,11 @@ import { emitCreatorPresentationRefresh } from '../services/creatorPresentationE
 import { PremiumPromptBanner } from '../components/common/PremiumPromptBanner';
 import { fetchJsonWithCache, FRONTEND_CACHE_NAMESPACES, getFrontendCacheScope, invalidateFrontendCache } from '../services/frontendCache';
 import { getRoutePrefetchProps } from '../services/routePrefetch';
+import { getContentImageAssets, getDisplayImageUrl } from '../utils/contentMedia';
 import { formatCount, formatRelative } from '../utils/helpers';
 import { validateSingleImageBeforeUpload } from '../utils/fileValidation';
 import { formatTag, normalizeTagList } from '../utils/hashtags';
+import { toSafeInitial, toSafeInlineText, toSafeText } from '../utils/safeText';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -492,6 +494,9 @@ export default function ProfilePage() {
   const publicContent = content.filter((item) => item.isPremium !== true);
   const premiumContent = content.filter((item) => item.isPremium === true);
   const shouldShowPremiumFilter = isOwnProfile || viewerCanAccessPremium || premiumContent.length > 0;
+  const safeProfileUsername = toSafeInlineText(profile?.username, 'Unknown');
+  const safeProfileEmail = toSafeInlineText(profile?.email, '');
+  const safeProfileBio = toSafeText(profile?.bio, { fallback: '' });
   const filteredContent = content.filter((item) => {
     if (contentVisibilityFilter === 'public') {
       return item.isPremium !== true;
@@ -513,12 +518,12 @@ export default function ProfilePage() {
               {profile?.avatar ? (
                 <img
                   src={`${API_URL}${profile.avatar}`}
-                  alt={profile.username}
+                  alt={safeProfileUsername}
                   className="h-24 w-24 rounded-full object-cover"
                 />
               ) : (
                 <div className="flex h-24 w-24 items-center justify-center rounded-full bg-gradient-to-br from-brand to-purple-600 text-4xl font-semibold text-white">
-                  {profile?.username?.charAt(0).toUpperCase()}
+                  {toSafeInitial(profile?.username)}
                 </div>
               )}
 
@@ -547,7 +552,7 @@ export default function ProfilePage() {
               <div>
                 <p className="detail-eyebrow">Profile detail</p>
                 <div className="mt-2 flex flex-wrap items-center gap-3">
-                  <h1 className="detail-title">{profile?.username}</h1>
+                  <h1 className="detail-title">{safeProfileUsername}</h1>
                   {isPremiumActive ? (
                     <span className="inline-flex items-center gap-2 rounded-full border border-amber-400/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold uppercase tracking-[0.2em] text-amber-200">
                       <Crown className="h-3.5 w-3.5" />
@@ -555,10 +560,10 @@ export default function ProfilePage() {
                     </span>
                   ) : null}
                 </div>
-                <p className="text-slate-400">{profile?.email}</p>
+                <p className="text-slate-400">{safeProfileEmail}</p>
               </div>
 
-              {profile?.bio ? <p className="max-w-2xl text-sm leading-6 text-slate-300">{profile.bio}</p> : null}
+              {safeProfileBio ? <p className="max-w-2xl text-sm leading-6 text-slate-300">{safeProfileBio}</p> : null}
 
               <div className="flex flex-wrap gap-3 text-sm">
                 <button type="button" onClick={() => fetchRelationList('followers')} className="detail-inline-button">
@@ -874,18 +879,18 @@ export default function ProfilePage() {
                   <div className="rounded-2xl border border-white/10 bg-white/[0.04] px-4 py-4 text-sm text-slate-300">
                     <div className="text-xs uppercase tracking-[0.16em] text-slate-400">Preview</div>
                     <div className="mt-2 text-xs font-semibold uppercase tracking-[0.18em] text-amber-200">
-                      {profileForm.membershipTitle || 'Artist Membership'}
+                      {toSafeInlineText(profileForm.membershipTitle, 'Artist Membership')}
                     </div>
                     <div className="mt-2 text-lg font-semibold text-white">
                       {new Intl.NumberFormat('vi-VN').format(Number(profileForm.subscriptionPrice || 0))}₫ / 30 days
                     </div>
                     <p className="mt-2 leading-6 text-slate-300">
-                      {profileForm.membershipDescription || 'Describe what users unlock when they join your membership.'}
+                      {toSafeText(profileForm.membershipDescription, { fallback: 'Describe what users unlock when they join your membership.' })}
                     </p>
                     {(profileForm.membershipBenefitsText || '').trim() ? (
                       <div className="mt-3 space-y-2">
                         {profileForm.membershipBenefitsText.split(/\r?\n/).filter(Boolean).slice(0, 4).map((benefit) => (
-                          <div key={benefit} className="text-xs text-slate-400">• {benefit}</div>
+                          <div key={benefit} className="text-xs text-slate-400">• {toSafeText(benefit)}</div>
                         ))}
                       </div>
                     ) : null}
@@ -932,15 +937,15 @@ export default function ProfilePage() {
             {followingList.slice(0, 6).map((creator) => (
               <Link key={creator._id} to={`/profile/${creator._id}`} className="panel-soft flex items-center gap-3 p-4 transition hover:border-slate-500">
                 {creator.avatar ? (
-                  <img src={`${API_URL}${creator.avatar}`} alt={creator.username} className="h-12 w-12 rounded-full object-cover" />
+                  <img src={`${API_URL}${creator.avatar}`} alt={toSafeInlineText(creator.username, 'Unknown')} className="h-12 w-12 rounded-full object-cover" />
                 ) : (
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-brand to-purple-600 text-lg font-semibold text-white">
-                    {creator.username?.[0]?.toUpperCase() || '?'}
+                    {toSafeInitial(creator.username)}
                   </div>
                 )}
                 <div className="min-w-0">
-                  <p className="truncate font-medium text-white">{creator.username}</p>
-                  <p className="truncate text-sm text-slate-400">{creator.bio || 'No bio yet'}</p>
+                  <p className="truncate font-medium text-white">{toSafeInlineText(creator.username, 'Unknown')}</p>
+                  <p className="truncate text-sm text-slate-400">{toSafeText(creator.bio, { fallback: 'No bio yet' })}</p>
                 </div>
               </Link>
             ))}
@@ -963,15 +968,15 @@ export default function ProfilePage() {
             {relationData.length > 0 ? relationData.map((user) => (
               <Link key={user._id} to={`/profile/${user._id}`} className="panel-soft flex items-center gap-3 p-4 transition hover:border-slate-500">
                 {user.avatar ? (
-                  <img src={`${API_URL}${user.avatar}`} alt={user.username} className="h-12 w-12 rounded-full object-cover" />
+                  <img src={`${API_URL}${user.avatar}`} alt={toSafeInlineText(user.username, 'Unknown')} className="h-12 w-12 rounded-full object-cover" />
                 ) : (
                   <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-brand to-purple-600 text-lg font-semibold text-white">
-                    {user.username?.[0]?.toUpperCase() || '?'}
+                    {toSafeInitial(user.username)}
                   </div>
                 )}
                 <div>
-                  <p className="font-medium text-white">{user.username}</p>
-                  <p className="text-sm text-slate-400">{user.bio || 'No bio yet'}</p>
+                  <p className="font-medium text-white">{toSafeInlineText(user.username, 'Unknown')}</p>
+                  <p className="text-sm text-slate-400">{toSafeText(user.bio, { fallback: 'No bio yet' })}</p>
                 </div>
               </Link>
             )) : <p className="text-sm text-slate-400">No users to show.</p>}
@@ -1094,10 +1099,10 @@ export default function ProfilePage() {
                     <span className="text-xs text-slate-500">{item.views || 0} views</span>
                   </div>
 
-                  {!isStory && item.images && item.images[0] ? (
+                  {!isStory && getContentImageAssets(item)[0] ? (
                     <div className="flex h-48 items-center justify-center bg-slate-950">
                       <img
-                        src={item.images[0].startsWith('http') ? item.images[0] : `${API_URL}${item.images[0]}`}
+                        src={getDisplayImageUrl(getContentImageAssets(item)[0], { preferPreview: true })}
                         alt={item.title}
                         className="max-h-full max-w-full object-contain"
                       />

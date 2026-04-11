@@ -10,6 +10,7 @@ import { getRoutePrefetchProps } from '../services/routePrefetch';
 import { formatCount, formatRelative } from '../utils/helpers';
 import { formatTag, normalizeTagList } from '../utils/hashtags';
 import { buildRemovedContentLink } from '../utils/notifications';
+import { toSafeInitial, toSafeInlineText, toSafeText } from '../utils/safeText';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -60,6 +61,10 @@ export default function StoryPage() {
   const hasHandledAuthIdentityRef = useRef(false);
   const authIdentityKey = `${getToken() ? 'auth' : 'guest'}:${currentUser?._id || currentUser?.id || 'guest'}`;
   const authorAvatarUrl = getAvatarUrl(story?.author?.avatar);
+  const safeAuthorUsername = toSafeInlineText(story?.author?.username, 'Unknown');
+  const safeStoryTitle = toSafeInlineText(story?.title, 'Untitled story');
+  const safeStoryDescription = toSafeText(story?.description, { fallback: '' });
+  const safeStoryContent = toSafeText(story?.content, { fallback: '' });
 
   const isAuthor = story?.author?._id === currentUser._id || story?.author?._id === currentUser.id;
   const highlightTimeoutRef = useRef(null);
@@ -474,9 +479,9 @@ export default function StoryPage() {
                 className="block transition hover:opacity-90"
               >
                 {authorAvatarUrl ? (
-                  <img src={authorAvatarUrl} alt={story.author?.username || 'Unknown'} className="feed-avatar" />
+                  <img src={authorAvatarUrl} alt={safeAuthorUsername} className="feed-avatar" />
                 ) : (
-                  <div className="feed-avatar-fallback">{story.author?.username?.[0]?.toUpperCase() || '?'}</div>
+                  <div className="feed-avatar-fallback">{toSafeInitial(story?.author?.username)}</div>
                 )}
               </Link>
             </div>
@@ -488,7 +493,7 @@ export default function StoryPage() {
                   {...getRoutePrefetchProps(`/profile/${story.author?._id}`)}
                   className="truncate font-semibold text-white transition hover:text-cyan-200"
                 >
-                  {story.author?.username || 'Unknown'}
+                  {safeAuthorUsername}
                 </Link>
                 {story.author?.creatorPlan === 'premium_artist' && (
                   <div className="flex items-center gap-1 rounded-full bg-amber-500/20 px-2 py-0.5 border border-amber-500/40">
@@ -501,15 +506,15 @@ export default function StoryPage() {
                   {...getRoutePrefetchProps(`/profile/${story.author?._id}`)}
                   className="text-slate-500 transition hover:text-cyan-200"
                 >
-                  @{story.author?.username || 'unknown'}
+                  @{safeAuthorUsername}
                 </Link>
                 <span className="text-slate-600">·</span>
                 <span className="text-slate-500">{formatRelative(story.createdAt)}</span>
               </div>
 
-              <h2 className="mt-4 detail-title">{story.title}</h2>
+              <h2 className="mt-4 detail-title">{safeStoryTitle}</h2>
 
-              {story.description ? <p className="mt-4 text-lg leading-8 text-slate-300">{story.description}</p> : null}
+              {safeStoryDescription ? <p className="mt-4 text-lg leading-8 text-slate-300">{safeStoryDescription}</p> : null}
 
               {storyTags.length > 0 ? (
                 <div className="mt-4 flex flex-wrap gap-2">
@@ -521,7 +526,7 @@ export default function StoryPage() {
                 </div>
               ) : null}
 
-              <div className="mt-5 detail-prose whitespace-pre-wrap leading-8">{story.content}</div>
+              <div className="mt-5 detail-prose whitespace-pre-wrap leading-8">{safeStoryContent}</div>
 
               <div className="detail-post-meta-line">{new Date(story.createdAt).toLocaleString()}</div>
 
@@ -620,7 +625,7 @@ export default function StoryPage() {
               >
                 <div className="mb-2 flex items-center justify-between gap-4">
                   <div className="flex items-center gap-3">
-                    <span className="font-semibold text-white">{comment.user?.username || 'Anonymous'}</span>
+                    <span className="font-semibold text-white">{toSafeInlineText(comment.user?.username, 'Anonymous')}</span>
                     <span className="text-sm text-slate-400">{new Date(comment.createdAt).toLocaleString()}</span>
                   </div>
                   {comment.user?._id === currentUser._id || comment.user?._id === currentUser.id ? (
@@ -633,7 +638,7 @@ export default function StoryPage() {
                     </button>
                   ) : null}
                 </div>
-                <p className="text-slate-300">{comment.text}</p>
+                <p className="text-slate-300">{toSafeText(comment.text)}</p>
               </div>
             ))
           )}

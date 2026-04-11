@@ -7,6 +7,8 @@ import { formatTag, normalizeTagList } from '../utils/hashtags';
 import { getCurrentUser, getToken, subscribeToCurrentUserChange, updateCurrentUserCollection } from '../services/authService';
 import { invalidateContentMutationCaches } from '../services/appDataInvalidation';
 import { getRoutePrefetchProps } from '../services/routePrefetch';
+import { getContentImageAssets, getContentQualityBadge, getDisplayImageUrl } from '../utils/contentMedia';
+import { toSafeInitial, toSafeInlineText, toSafeText } from '../utils/safeText';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 const STORY_FALLBACK_SVG = `data:image/svg+xml;charset=UTF-8,${encodeURIComponent(
@@ -27,28 +29,25 @@ function ContentCardComponent({ item, onInteractionComplete }) {
 
   useEffect(() => subscribeToCurrentUserChange(setCurrentUser), []);
 
-  const isStory = contentItem.content !== undefined;
+  const isStory = contentItem.contentType === 'story' || (contentItem.contentType === undefined && contentItem.content !== undefined);
   const contentId = String(contentItem._id);
   const detailPath = isStory ? `/story/${contentItem._id}` : `/artwork/${contentItem._id}`;
-  const mediaImages = Array.isArray(contentItem.images) ? contentItem.images : [];
-  const thumbnail = mediaImages.length > 0 ? mediaImages[0] : null;
   const displayTags = normalizeTagList(contentItem.tags || []).slice(0, 3);
   const likedIds = Array.isArray(currentUser?.likes) ? currentUser.likes.map((value) => String(value)) : [];
   const bookmarkedIds = Array.isArray(currentUser?.bookmarks) ? currentUser.bookmarks.map((value) => String(value)) : [];
   const isLiked = likedIds.includes(contentId);
   const isBookmarked = bookmarkedIds.includes(contentId);
-  const visibleMediaImages = mediaImages.slice(0, 4);
-  const hiddenMediaImageCount = Math.max(mediaImages.length - 4, 0);
-  const showArtworkCollage = !isStory && mediaImages.length > 1;
+  const mediaAssets = getContentImageAssets(contentItem);
+  const visibleMediaAssets = mediaAssets.slice(0, 4);
+  const hiddenMediaImageCount = Math.max(mediaAssets.length - 4, 0);
+  const showArtworkCollage = !isStory && mediaAssets.length > 1;
+  const previewAsset = mediaAssets[0] || null;
+  const qualityBadge = getContentQualityBadge(contentItem);
+  const safeAuthorUsername = toSafeInlineText(contentItem.author?.username, 'Unknown');
+  const safeTitle = toSafeInlineText(contentItem.title, isStory ? 'Untitled story' : 'Untitled artwork');
+  const safeDescription = toSafeText(contentItem.description, { fallback: '' });
 
   const getFallbackImage = () => (isStory ? STORY_FALLBACK_SVG : IMAGE_FALLBACK_SVG);
-
-  const getImageUrl = (url) => {
-    if (!url) return getFallbackImage();
-    if (url.startsWith('http')) return url;
-    if (url.startsWith('data:image')) return url;
-    return `${API_URL}${url}`;
-  };
 
   const getAuthorAvatarUrl = (url) => {
     if (!url) return '';
@@ -109,12 +108,12 @@ function ContentCardComponent({ item, onInteractionComplete }) {
           {contentItem.author?.avatar ? (
             <img
               src={getAuthorAvatarUrl(contentItem.author.avatar)}
-              alt={contentItem.author.username}
+              alt={safeAuthorUsername}
               className="feed-avatar"
             />
           ) : (
             <div className="feed-avatar-fallback">
-              {contentItem.author?.username?.[0]?.toUpperCase() || '?'}
+              {toSafeInitial(contentItem.author?.username)}
             </div>
           )}
         </div>
@@ -123,8 +122,8 @@ function ContentCardComponent({ item, onInteractionComplete }) {
           <div className="flex items-start justify-between gap-3">
             <div className="min-w-0">
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
-                <span className="truncate font-semibold text-white">{contentItem.author?.username || 'Unknown'}</span>
-                <span className="text-slate-500">@{contentItem.author?.username || 'unknown'}</span>
+                <span className="truncate font-semibold text-white">{safeAuthorUsername}</span>
+                <span className="text-slate-500">@{safeAuthorUsername}</span>
                 <span className="text-slate-600">·</span>
                 <span className="text-slate-500">{formatRelative(contentItem.createdAt)}</span>
               </div>
@@ -137,10 +136,10 @@ function ContentCardComponent({ item, onInteractionComplete }) {
           <div className="mt-3 space-y-3">
             <div>
               <Link to={detailPath} {...getRoutePrefetchProps(detailPath)} className="feed-card-title">
-                {contentItem.title}
+                {safeTitle}
               </Link>
-              {contentItem.description ? (
-                <p className="feed-copy-clamp mt-2 text-[15px] leading-7 text-slate-200">{contentItem.description}</p>
+              {safeDescription ? (
+                <p className="feed-copy-clamp mt-2 text-[15px] leading-7 text-slate-200">{safeDescription}</p>
               ) : null}
             </div>
 
@@ -156,18 +155,18 @@ function ContentCardComponent({ item, onInteractionComplete }) {
 
             {showArtworkCollage ? (
               <Link to={detailPath} {...getRoutePrefetchProps(detailPath)} className="feed-media-grid">
-                {visibleMediaImages.map((image, index) => {
+                {visibleMediaAssets.map((asset, index) => {
                   const showMoreOverlay = index === 3 && hiddenMediaImageCount > 0;
-                  const isWideLead = visibleMediaImages.length === 3 && index === 0;
+                  const isWideLead = visibleMediaAssets.length === 3 && index === 0;
 
                   return (
                     <div
-                      key={`${image}-${index}`}
+                      key={`${asset.originalUrl || asset.previewUrl}-${index}`}
                       className={`feed-media-tile ${isWideLead ? 'feed-media-tile-featured' : 'feed-media-tile-rect'}`}
                     >
                       <LazyImage
-                        src={getImageUrl(image)}
-                        alt={`${contentItem.title} ${index + 1}`}
+                        src={getDisplayImageUrl(asset, { preferPreview: true }) || getFallbackImage()}
+                        alt={`${safeTitle} ${index + 1}`}
                         fallbackSrc={getFallbackImage()}
                         wrapperClassName="h-full w-full"
                         className="h-full w-full object-cover"
@@ -175,7 +174,12 @@ function ContentCardComponent({ item, onInteractionComplete }) {
                       {index === 0 ? (
                         <div className="feed-media-badge">
                           <Images size={12} />
-                          <span>{mediaImages.length}</span>
+                          <span>{mediaAssets.length}</span>
+                        </div>
+                      ) : null}
+                      {index === 0 && qualityBadge ? (
+                        <div className={`feed-media-quality-badge ${qualityBadge.tone === 'ultra' ? 'feed-media-quality-badge-ultra' : 'feed-media-quality-badge-standard'}`}>
+                          {qualityBadge.label}
                         </div>
                       ) : null}
                       {showMoreOverlay ? <div className="feed-media-more">+{hiddenMediaImageCount}</div> : null}
@@ -186,12 +190,17 @@ function ContentCardComponent({ item, onInteractionComplete }) {
             ) : (
               <Link to={detailPath} {...getRoutePrefetchProps(detailPath)} className="feed-media block">
                 <LazyImage
-                  src={getImageUrl(thumbnail)}
-                  alt={contentItem.title}
+                  src={getDisplayImageUrl(previewAsset, { preferPreview: true }) || getFallbackImage()}
+                  alt={safeTitle}
                   fallbackSrc={getFallbackImage()}
                   wrapperClassName="aspect-[16/10] w-full"
                   className="h-full w-full object-cover"
                 />
+                {qualityBadge ? (
+                  <div className={`feed-media-quality-badge ${qualityBadge.tone === 'ultra' ? 'feed-media-quality-badge-ultra' : 'feed-media-quality-badge-standard'}`}>
+                    {qualityBadge.label}
+                  </div>
+                ) : null}
               </Link>
             )}
           </div>

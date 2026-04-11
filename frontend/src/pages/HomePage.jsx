@@ -240,7 +240,7 @@ export default function HomePage() {
     <div className="feed-shell">
       {loginNotice ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-xl rounded-[28px] border border-slate-700 bg-slate-900/95 p-6 text-slate-100 shadow-2xl light:border-slate-200 light:bg-white light:text-slate-800">
+          <div className="app-overlay-card w-full max-w-xl">
             <p className="text-xs uppercase tracking-[0.2em] text-emerald-300 light:text-emerald-600">Account update</p>
             <h3 className="mt-2 text-2xl font-semibold text-white light:text-slate-900">{loginNotice.title}</h3>
             <p className="mt-3 text-sm leading-6 text-slate-300 light:text-slate-600">{loginNotice.message}</p>
