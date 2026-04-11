@@ -1,6 +1,44 @@
 import mongoose from 'mongoose';
 import { buildContentSearchFields } from '../utils/search.js';
 
+const imageAssetSchema = new mongoose.Schema({
+  originalUrl: {
+    type: String,
+    required: true,
+    trim: true
+  },
+  previewUrl: {
+    type: String,
+    default: '',
+    trim: true
+  },
+  width: {
+    type: Number,
+    default: 0
+  },
+  height: {
+    type: Number,
+    default: 0
+  },
+  previewWidth: {
+    type: Number,
+    default: 0
+  },
+  previewHeight: {
+    type: Number,
+    default: 0
+  },
+  isUltraHd: {
+    type: Boolean,
+    default: false
+  },
+  qualityLabel: {
+    type: String,
+    default: '',
+    trim: true
+  }
+}, { _id: false });
+
 // Story schema for text-based content
 const storySchema = new mongoose.Schema({
   title: {
@@ -33,6 +71,32 @@ const storySchema = new mongoose.Schema({
   images: [{
     type: String
   }],
+  imageAssets: {
+    type: [imageAssetSchema],
+    default: []
+  },
+  mediaSummary: {
+    imageCount: {
+      type: Number,
+      default: 0
+    },
+    hasUltraHd: {
+      type: Boolean,
+      default: false
+    },
+    highestWidth: {
+      type: Number,
+      default: 0
+    },
+    highestHeight: {
+      type: Number,
+      default: 0
+    },
+    previewMaxDimension: {
+      type: Number,
+      default: 1080
+    }
+  },
   tags: [{
     type: String,
     trim: true
@@ -46,6 +110,15 @@ const storySchema = new mongoose.Schema({
     type: String,
     enum: ['draft', 'pending', 'approved', 'rejected', 'deleted'],
     default: 'pending'
+  },
+  statusBeforePermanentBan: {
+    type: String,
+    enum: ['draft', 'pending', 'approved', 'rejected', 'deleted', null],
+    default: null
+  },
+  hiddenByPermanentBan: {
+    type: Boolean,
+    default: false
   },
   isPremium: {
     type: Boolean,

@@ -4,6 +4,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import { Button } from '../common/Button';
 import { getCurrentUser, logout, subscribeToCurrentUserChange } from '../../services/authService';
 import { getRoutePrefetchProps } from '../../services/routePrefetch';
+import { toSafeInitial, toSafeInlineText } from '../../utils/safeText';
 
 const APP_NAME = 'The Index';
 const APP_SLOGAN = 'Share Your Stories. Showcase Your Art.';
@@ -22,6 +23,8 @@ export function Sidebar() {
     logout();
     navigate('/login');
   };
+
+  const safeUsername = toSafeInlineText(user?.username, 'Unknown');
 
   const handleNavClick = (event, link) => {
     const isModifiedClick = event.metaKey || event.altKey || event.ctrlKey || event.shiftKey;
@@ -96,17 +99,17 @@ export function Sidebar() {
                 {user.avatar ? (
                   <img 
                     src={`${API_URL}${user.avatar}`} 
-                    alt={user.username}
+                    alt={safeUsername}
                     className="h-10 w-10 rounded-full object-cover"
                   />
                 ) : (
                   <div className="user-avatar-fallback h-10 w-10 text-sm">
-                    {user.username?.[0]?.toUpperCase() || '?'}
+                    {toSafeInitial(user?.username)}
                   </div>
                 )}
                 <div className="min-w-0 flex-1">
-                  <p className="truncate font-medium text-white">{user.username}</p>
-                  <p className="truncate text-sm text-slate-400">@{user.username}</p>
+                  <p className="truncate font-medium text-white">{safeUsername}</p>
+                  <p className="truncate text-sm text-slate-400">@{safeUsername}</p>
                 </div>
               </div>
             </div>

@@ -1,8 +1,10 @@
 import express from 'express';
-import { deleteNotification, getNotifications, markAsRead } from '../controllers/NotificationController.js';
+import { deleteNotification, getNotificationSummary, getNotifications, markAsRead } from '../controllers/NotificationController.js';
 import { authenticateToken } from '../middleware/auth.js';
 
 const router = express.Router();
+
+router.get('/notifications/summary', authenticateToken, getNotificationSummary);
 
 // GET /api/notifications - Get user's notifications
 router.get('/notifications', authenticateToken, getNotifications);

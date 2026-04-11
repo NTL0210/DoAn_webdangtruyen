@@ -2,7 +2,7 @@ import { useEffect, useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
 import { Meteors } from '../components/Meteors';
 import { APP_NAME, APP_SLOGAN } from '../constants/app';
-import { login, resendLoginOtp, submitAccountAppeal, verifyLoginOtp } from '../services/authService';
+import { consumeForcedBanState, login, resendLoginOtp, submitAccountAppeal, verifyLoginOtp } from '../services/authService';
 import { isCompleteOtpCode, sanitizeOtpCode } from '../utils/otp';
 
 function formatDateTime(value) {
@@ -51,6 +51,14 @@ export default function LoginPage() {
   const twoFactorCodeInlineError = twoFactorDialog.code && !isCompleteOtpCode(twoFactorDialog.code)
     ? 'OTP must contain exactly 6 digits.'
     : '';
+
+  useEffect(() => {
+    const forcedBanState = consumeForcedBanState();
+
+    if (forcedBanState) {
+      setBanDialog(forcedBanState);
+    }
+  }, []);
 
   useEffect(() => {
     if (!twoFactorDialog.open || otpResendCooldown <= 0) {
@@ -361,7 +369,7 @@ export default function LoginPage() {
 
       {banDialog ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-950/70 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-[28px] border border-slate-700 bg-slate-900/95 p-6 text-slate-100 shadow-2xl light:border-slate-200 light:bg-white light:text-slate-800">
+          <div className="app-overlay-card w-full max-w-2xl">
             <div>
               <div>
                 <p className="text-xs uppercase tracking-[0.2em] text-rose-300 light:text-rose-500">Account status</p>
@@ -382,7 +390,7 @@ export default function LoginPage() {
             </div>
 
             {latestAppeal ? (
-              <div className="mt-5 rounded-3xl border border-slate-800 bg-slate-950/50 p-4 light:border-slate-200 light:bg-slate-50">
+              <div className="app-overlay-surface mt-5">
                 <p className="text-xs uppercase tracking-[0.2em] text-slate-500">Latest appeal</p>
                 <p className="mt-2 text-sm text-slate-300 light:text-slate-700">Status: {latestAppeal.status}</p>
                 <p className="mt-2 text-sm text-slate-400 light:text-slate-600">Submitted: {formatDateTime(latestAppeal.createdAt)}</p>
@@ -415,7 +423,7 @@ export default function LoginPage() {
 
       {banDialog && appealDialog.open ? (
         <div className="fixed inset-0 z-[60] flex items-center justify-center bg-slate-950/70 px-4 backdrop-blur-sm">
-          <div className="w-full max-w-2xl rounded-[28px] border border-slate-700 bg-slate-900/95 p-6 text-slate-100 shadow-2xl light:border-slate-200 light:bg-white light:text-slate-800">
+          <div className="app-overlay-card w-full max-w-2xl">
             <div className="flex items-start justify-between gap-4">
               <div>
                 <p className="text-xs uppercase tracking-[0.2em] text-brand-light light:text-brand">Appeal request</p>
@@ -440,7 +448,7 @@ export default function LoginPage() {
                   value={appealDialog.reason}
                   onChange={(event) => setAppealDialog((prev) => ({ ...prev, reason: event.target.value }))}
                   rows={5}
-                  className="w-full rounded-3xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/30 light:border-slate-200 light:bg-slate-50 light:text-slate-900"
+                  className="app-overlay-input"
                   placeholder="Explain what happened and why the ban should be reviewed."
                 />
               </div>
@@ -451,7 +459,7 @@ export default function LoginPage() {
                   value={appealDialog.evidence}
                   onChange={(event) => setAppealDialog((prev) => ({ ...prev, evidence: event.target.value }))}
                   rows={4}
-                  className="w-full rounded-3xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/30 light:border-slate-200 light:bg-slate-50 light:text-slate-900"
+                  className="app-overlay-input"
                   placeholder="Links, timeline, or any proof that supports your appeal."
                 />
               </div>

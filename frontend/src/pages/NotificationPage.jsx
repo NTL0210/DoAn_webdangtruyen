@@ -2,9 +2,15 @@ import { Trash2 } from 'lucide-react';
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getToken } from '../services/authService';
-import { emitNotificationChange, subscribeToNotificationChanges, subscribeToNotifications } from '../services/notificationService';
+import {
+  emitNotificationChange,
+  subscribeToNotificationChanges,
+  subscribeToNotifications,
+  subscribeToNotificationSocketState
+} from '../services/notificationService';
 import { formatRelative } from '../utils/helpers';
 import { getNotificationLink, getNotificationPresentation } from '../utils/notifications';
+import { toSafeInitial, toSafeInlineText, toSafeText } from '../utils/safeText';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -14,8 +20,62 @@ export default function NotificationPage() {
   const [error, setError] = useState('');
   const navigate = useNavigate();
 
+  const fetchNotifications = async () => {
+    try {
+      setLoading(true);
+      const response = await fetch(`${API_URL}/api/notifications?limit=40`, {
+        headers: {
+          Authorization: `Bearer ${getToken()}`
+        }
+      });
+      const data = await response.json();
+
+      if (data.success) {
+        setNotifications(data.data || []);
+        setError('');
+      } else {
+        setError(data.error?.message || 'Failed to load notifications');
+      }
+    } catch (err) {
+      setError('Failed to load notifications');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
     fetchNotifications();
+  }, []);
+
+  useEffect(() => {
+    const handleRefresh = () => {
+      if (getToken()) {
+        fetchNotifications();
+      }
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleRefresh();
+      }
+    };
+
+    const unsubscribeSocketState = subscribeToNotificationSocketState((payload) => {
+      if (payload?.type === 'open') {
+        handleRefresh();
+      }
+    });
+
+    window.addEventListener('focus', handleRefresh);
+    window.addEventListener('online', handleRefresh);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      unsubscribeSocketState();
+      window.removeEventListener('focus', handleRefresh);
+      window.removeEventListener('online', handleRefresh);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
   }, []);
 
   useEffect(() => {
@@ -42,29 +102,6 @@ export default function NotificationPage() {
       }
     });
   }, []);
-
-  const fetchNotifications = async () => {
-    try {
-      setLoading(true);
-      const response = await fetch(`${API_URL}/api/notifications`, {
-        headers: {
-          Authorization: `Bearer ${getToken()}`
-        }
-      });
-      const data = await response.json();
-
-      if (data.success) {
-        setNotifications(data.data || []);
-        setError('');
-      } else {
-        setError(data.error?.message || 'Failed to load notifications');
-      }
-    } catch (err) {
-      setError('Failed to load notifications');
-    } finally {
-      setLoading(false);
-    }
-  };
 
   const markAsRead = async (notificationId) => {
     try {
@@ -186,17 +223,23 @@ export default function NotificationPage() {
               key={notification._id}
               className={`detail-card p-5 transition ${notification.read ? 'opacity-80' : 'border-brand/40'} ${(notification.commentDeleted || notification.contentDeleted) ? 'border-amber-400/25' : ''}`}
             >
+              {(() => {
+                const safeFromUsername = toSafeInlineText(notification.from?.username, 'System');
+                const safeMessage = toSafeText(notification.message);
+                const safeCommentPreview = toSafeText(notification.commentPreview, { fallback: '' });
+
+                return (
               <div className="flex items-start justify-between gap-4">
                 <div className="flex items-start gap-3">
                   {notification.from?.avatar ? (
                     <img
                       src={notification.from.avatar.startsWith('http') ? notification.from.avatar : `${API_URL}${notification.from.avatar}`}
-                      alt={notification.from.username}
+                      alt={safeFromUsername}
                       className="h-12 w-12 rounded-full object-cover"
                     />
                   ) : (
                     <div className="flex h-12 w-12 items-center justify-center rounded-full bg-gradient-to-br from-brand to-purple-600 text-sm font-semibold text-white">
-                      {notification.from?.username?.[0]?.toUpperCase() || '!'}
+                      {toSafeInitial(notification.from?.username, '!')}
                     </div>
                   )}
 
@@ -204,15 +247,15 @@ export default function NotificationPage() {
                     <p className="text-[11px] uppercase tracking-[0.26em] text-slate-500">
                       {getNotificationPresentation(notification).name}
                     </p>
-                    <p className="text-sm font-medium leading-6 text-white sm:text-base">{notification.message}</p>
-                    {notification.commentPreview ? (
+                    <p className="text-sm font-medium leading-6 text-white sm:text-base">{safeMessage}</p>
+                    {safeCommentPreview ? (
                       <div className={`mt-2 rounded-2xl border px-3 py-2 text-sm leading-6 ${notification.commentDeleted ? 'border-amber-500/25 bg-amber-500/10 text-amber-100' : 'border-slate-700 bg-slate-950/50 text-slate-300'}`}>
                         {notification.commentDeleted ? 'Deleted comment: ' : ''}
-                        {notification.commentPreview}
+                        {safeCommentPreview}
                       </div>
                     ) : null}
                     <p className="mt-1 text-xs uppercase tracking-[0.16em] text-slate-500">
-                      {notification.from?.username ? `@${notification.from.username} • ` : ''}
+                      {notification.from?.username ? `@${safeFromUsername} • ` : ''}
                       {formatRelative(notification.createdAt)}
                     </p>
                     {notification.contentDeleted ? (
@@ -261,6 +304,8 @@ export default function NotificationPage() {
                   </button>
                 </div>
               </div>
+                );
+              })()}
             </article>
           ))}
         </div>

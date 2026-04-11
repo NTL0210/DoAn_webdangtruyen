@@ -2,9 +2,12 @@ const NOTIFICATION_EVENT = 'app-notification-received';
 const NOTIFICATION_CHANGE_EVENT = 'app-notification-changed';
 const COMMENT_EVENT = 'app-comment-received';
 const NOTIFICATION_SOCKET_EVENT = 'app-notification-socket-state';
+const ACCOUNT_STATE_EVENT = 'app-account-state-received';
+const ACCOUNT_STATE_SYNC_INTERVAL_MS = 20000;
 let socket = null;
 let reconnectTimeout = null;
 let manualDisconnect = false;
+let accountStateSyncInterval = null;
 const contentSubscriptionCounts = new Map();
 
 function emitNotification(notification) {
@@ -34,6 +37,41 @@ function emitNotificationSocketState(payload) {
   window.dispatchEvent(new CustomEvent(NOTIFICATION_SOCKET_EVENT, {
     detail: payload
   }));
+}
+
+function emitAccountState(payload) {
+  window.dispatchEvent(new CustomEvent(ACCOUNT_STATE_EVENT, {
+    detail: payload
+  }));
+}
+
+function clearAccountStateSyncInterval() {
+  if (accountStateSyncInterval) {
+    window.clearInterval(accountStateSyncInterval);
+    accountStateSyncInterval = null;
+  }
+}
+
+export function requestAccountState(reason = 'manual') {
+  if (!socket || socket.readyState !== WebSocket.OPEN) {
+    return false;
+  }
+
+  socket.send(JSON.stringify({
+    type: 'request-account-state',
+    reason
+  }));
+
+  return true;
+}
+
+function startAccountStateSyncInterval() {
+  clearAccountStateSyncInterval();
+  accountStateSyncInterval = window.setInterval(() => {
+    if (typeof document === 'undefined' || document.visibilityState === 'visible') {
+      requestAccountState('interval-sync');
+    }
+  }, ACCOUNT_STATE_SYNC_INTERVAL_MS);
 }
 
 function buildSocketUrl(token) {
@@ -74,6 +112,9 @@ export function connectNotificationSocket(token = localStorage.getItem('token'),
         }));
       }
     });
+
+    requestAccountState(reason === 'reconnect' ? 'reconnect-sync' : 'socket-open');
+    startAccountStateSyncInterval();
   });
 
   activeSocket.addEventListener('message', (event) => {
@@ -107,12 +148,17 @@ export function connectNotificationSocket(token = localStorage.getItem('token'),
           commentId: String(payload.data.commentId)
         });
       }
+
+      if (payload.type === 'account-state' && payload.data) {
+        emitAccountState(payload.data);
+      }
     } catch (error) {
       console.error('Notification socket parse error:', error);
     }
   });
 
   activeSocket.addEventListener('close', () => {
+    clearAccountStateSyncInterval();
     emitNotificationSocketState({
       type: 'close',
       reason
@@ -141,6 +187,7 @@ export function connectNotificationSocket(token = localStorage.getItem('token'),
 
 export function disconnectNotificationSocket() {
   manualDisconnect = true;
+  clearAccountStateSyncInterval();
 
   if (reconnectTimeout) {
     window.clearTimeout(reconnectTimeout);
@@ -227,5 +274,14 @@ export function subscribeToNotificationSocketState(callback) {
 
   return () => {
     window.removeEventListener(NOTIFICATION_SOCKET_EVENT, handler);
+  };
+}
+
+export function subscribeToAccountState(callback) {
+  const handler = (event) => callback(event.detail);
+  window.addEventListener(ACCOUNT_STATE_EVENT, handler);
+
+  return () => {
+    window.removeEventListener(ACCOUNT_STATE_EVENT, handler);
   };
 }

@@ -185,6 +185,7 @@ export async function banContent(req, res) {
         source: 'content-ban'
       });
       restriction = getActivePostingRestriction(author);
+      await webSocketManager.sendAccountState(author._id, { reason: 'content-ban' });
     }
 
     await webSocketManager.sendNotification(content.author, {
@@ -323,6 +324,8 @@ export async function banUser(req, res) {
 
     const restriction = getActivePostingRestriction(user);
 
+    await webSocketManager.sendAccountState(user._id, { reason: 'account-ban' });
+
     await webSocketManager.sendNotification(user._id, {
       recipient: user._id,
       type: 'rejection',
@@ -445,6 +448,8 @@ export async function permanentlyBanUser(req, res) {
       message: `Your account has been permanently banned. Reason: ${reason}. You can sign in to review the decision and submit an appeal to the admin team.`
     });
 
+    await webSocketManager.sendAccountState(user._id, { reason: 'permanent-ban' });
+
     return res.status(200).json({
       success: true,
       message: 'User permanently banned successfully',
@@ -453,6 +458,7 @@ export async function permanentlyBanUser(req, res) {
         accountStatus: user.accountStatus,
         permanentBanReason: user.permanentBanReason,
         permanentlyBannedAt: user.permanentlyBannedAt,
+        permanentDeletionScheduledFor: getPermanentBanDeletionDeadline(user),
         ...serializePostingRestriction(user)
       }
     });
@@ -472,6 +478,7 @@ export async function unbanUser(req, res) {
   try {
     const { id } = req.params;
     const user = await User.findById(id);
+    const wasPermanentlyBanned = user?.accountStatus === 'permanently-banned';
 
     if (!user) {
       return res.status(404).json({
@@ -490,22 +497,33 @@ export async function unbanUser(req, res) {
     user.postingRestrictionReason = '';
     user.postingRestrictionSource = null;
     user.lastModeratedAt = new Date();
-    user.pendingLoginNoticeType = 'success';
-    user.pendingLoginNoticeTitle = 'Account restored';
-    user.pendingLoginNoticeMessage = 'Your account appeal was approved. Your access has been restored and you can use the platform again.';
+
+    if (wasPermanentlyBanned) {
+      user.pendingLoginNoticeType = 'success';
+      user.pendingLoginNoticeTitle = 'Account restored';
+      user.pendingLoginNoticeMessage = 'Your account appeal was approved. Your access has been restored and you can use the platform again.';
+    }
+
     await user.save();
 
     const actorUsername = await getActorUsername(req.user.userId);
-    const restoredContent = await restoreUserContentAfterPermanentBan(user._id);
+    const restoredContent = wasPermanentlyBanned
+      ? await restoreUserContentAfterPermanentBan(user._id)
+      : {
+          restoredStories: 0,
+          restoredArtworks: 0
+        };
 
-    await recordModerationAuditEvent({
-      actionType: 'account-restored',
-      actorUserId: req.user.userId,
-      actorUsername,
-      targetUser: user,
-      reason: 'Manual admin restore',
-      metadata: restoredContent
-    });
+    if (wasPermanentlyBanned) {
+      await recordModerationAuditEvent({
+        actionType: 'account-restored',
+        actorUserId: req.user.userId,
+        actorUsername,
+        targetUser: user,
+        reason: 'Manual admin restore',
+        metadata: restoredContent
+      });
+    }
 
     await webSocketManager.sendNotification(user._id, {
       recipient: user._id,
@@ -513,8 +531,12 @@ export async function unbanUser(req, res) {
       from: req.user.userId,
       contentId: null,
       contentType: null,
-      message: 'Your posting restriction has been lifted by the admin team.'
+      message: wasPermanentlyBanned
+        ? 'Your account access has been restored by the admin team.'
+        : 'Your posting restriction has been lifted by the admin team.'
     });
+
+    await webSocketManager.sendAccountState(user._id, { reason: wasPermanentlyBanned ? 'account-restored' : 'restriction-cleared' });
 
     return res.status(200).json({
       success: true,
@@ -625,6 +647,8 @@ export async function approveAccountAppeal(req, res) {
         contentType: null,
         message: 'Your account appeal was approved and your access has been restored.'
       });
+
+      await webSocketManager.sendAccountState(user._id, { reason: 'appeal-approved' });
     }
 
     return res.status(200).json({

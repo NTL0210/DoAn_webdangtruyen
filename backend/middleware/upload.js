@@ -4,6 +4,7 @@ import fs from 'fs';
 import { fileTypeFromFile } from 'file-type';
 import { env } from '../config/env.js';
 import { ensureUploadsDirectory, uploadsDir } from '../config/paths.js';
+import { enrichUploadedImageFile } from '../utils/imageVariants.js';
 
 ensureUploadsDirectory();
 
@@ -24,15 +25,15 @@ const storage = multer.diskStorage({
 
 async function cleanupUploadedFiles(files) {
   await Promise.all((files || []).map(async (file) => {
-    if (!file?.path) {
-      return;
-    }
+    const filePaths = [file?.path, file?.previewPath].filter(Boolean);
 
-    try {
-      await fsPromises.unlink(file.path);
-    } catch {
-      // Ignore cleanup failures so the original validation error is preserved.
-    }
+    await Promise.all(filePaths.map(async (filePath) => {
+      try {
+        await fsPromises.unlink(filePath);
+      } catch {
+        // Ignore cleanup failures so the original validation error is preserved.
+      }
+    }));
   }));
 }
 
@@ -87,7 +88,8 @@ function wrapUpload(handler) {
 
       try {
         for (const file of uploadedFiles) {
-          normalizedFiles.push(await validateAndNormalizeFile(file));
+          const normalizedFile = await validateAndNormalizeFile(file);
+          normalizedFiles.push(await enrichUploadedImageFile(normalizedFile));
         }
 
         if (req.file) {

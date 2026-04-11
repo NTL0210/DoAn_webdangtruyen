@@ -1,5 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { fetchJsonWithCache, FRONTEND_CACHE_NAMESPACES } from '../services/frontendCache';
+import {
+  fetchJsonWithCache,
+  FRONTEND_CACHE_NAMESPACES,
+  invalidateFrontendCache,
+  subscribeToFrontendCacheInvalidation
+} from '../services/frontendCache';
 
 const API_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000';
 
@@ -22,7 +27,8 @@ export function useCursorFeed({
   scope = 'shared',
   requestOptions,
   ttlMs = 30 * 1000,
-  rootMargin = '900px 0px'
+  rootMargin = '900px 0px',
+  refreshIntervalMs = 45000
 }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(enabled);
@@ -32,6 +38,7 @@ export function useCursorFeed({
   const [isLoadingMore, setIsLoadingMore] = useState(false);
   const [loadMoreNode, setLoadMoreNode] = useState(null);
   const requestIdRef = useRef(0);
+  const lastSoftReloadAtRef = useRef(0);
 
   const loadMoreRef = useCallback((node) => {
     setLoadMoreNode(node);
@@ -44,7 +51,7 @@ export function useCursorFeed({
     return searchParams.toString();
   }, [limit, params]);
 
-  const fetchPage = async ({ cursor = null, append = false } = {}) => {
+  const fetchPage = useCallback(async ({ cursor = null, append = false, forceFresh = false } = {}) => {
     const requestId = requestIdRef.current + 1;
     requestIdRef.current = requestId;
 
@@ -61,9 +68,11 @@ export function useCursorFeed({
         searchParams.set('cursor', cursor);
       }
 
+      const cacheBustKey = forceFresh ? `&refresh=${Date.now()}` : '';
+
       const data = await fetchJsonWithCache({
         namespace,
-        key: `${baseQueryString}&cursor=${encodeURIComponent(cursor || 'first')}`,
+        key: `${baseQueryString}&cursor=${encodeURIComponent(cursor || 'first')}${cacheBustKey}`,
         url: `${API_URL}${endpoint}?${searchParams.toString()}`,
         ttlMs,
         scope,
@@ -95,7 +104,36 @@ export function useCursorFeed({
         setIsLoadingMore(false);
       }
     }
-  };
+  }, [baseQueryString, endpoint, namespace, requestOptions, scope, ttlMs]);
+
+  const reloadFeed = useCallback(({ forceFresh = false, preserveItems = true } = {}) => {
+    if (!enabled) {
+      return;
+    }
+
+    if (!preserveItems) {
+      setItems([]);
+    }
+
+    setNextCursor(null);
+    setHasMore(true);
+    fetchPage({ append: false, cursor: null, forceFresh });
+  }, [enabled, fetchPage]);
+
+  const softReload = useCallback((forceFresh = false) => {
+    const now = Date.now();
+
+    if (loading || isLoadingMore) {
+      return;
+    }
+
+    if (now - lastSoftReloadAtRef.current < 3000) {
+      return;
+    }
+
+    lastSoftReloadAtRef.current = now;
+    reloadFeed({ forceFresh, preserveItems: true });
+  }, [isLoadingMore, loading, reloadFeed]);
 
   useEffect(() => {
     if (!enabled) {
@@ -106,7 +144,7 @@ export function useCursorFeed({
     setNextCursor(null);
     setHasMore(true);
     fetchPage({ append: false, cursor: null });
-  }, [baseQueryString, enabled]);
+  }, [baseQueryString, enabled, fetchPage]);
 
   useEffect(() => {
     if (!enabled || loading || isLoadingMore || !hasMore || !nextCursor) {
@@ -132,7 +170,65 @@ export function useCursorFeed({
     return () => {
       observer.disconnect();
     };
-  }, [enabled, hasMore, isLoadingMore, loading, nextCursor, rootMargin, baseQueryString, loadMoreNode, endpoint, requestOptions, scope]);
+  }, [enabled, hasMore, isLoadingMore, loading, nextCursor, rootMargin, baseQueryString, loadMoreNode, fetchPage]);
+
+  useEffect(() => {
+    if (!enabled) {
+      return undefined;
+    }
+
+    return subscribeToFrontendCacheInvalidation((namespaces) => {
+      if (namespaces.includes(namespace)) {
+        softReload(false);
+      }
+    });
+  }, [enabled, namespace, softReload]);
+
+  useEffect(() => {
+    if (!enabled) {
+      return undefined;
+    }
+
+    const handleWindowRefresh = () => {
+      if (document.visibilityState === 'hidden') {
+        return;
+      }
+
+      softReload(true);
+    };
+
+    const handleVisibilityChange = () => {
+      if (document.visibilityState === 'visible') {
+        handleWindowRefresh();
+      }
+    };
+
+    window.addEventListener('focus', handleWindowRefresh);
+    window.addEventListener('online', handleWindowRefresh);
+    document.addEventListener('visibilitychange', handleVisibilityChange);
+
+    return () => {
+      window.removeEventListener('focus', handleWindowRefresh);
+      window.removeEventListener('online', handleWindowRefresh);
+      document.removeEventListener('visibilitychange', handleVisibilityChange);
+    };
+  }, [enabled, softReload]);
+
+  useEffect(() => {
+    if (!enabled || !refreshIntervalMs) {
+      return undefined;
+    }
+
+    const timerId = window.setInterval(() => {
+      if (document.visibilityState === 'visible') {
+        softReload(true);
+      }
+    }, refreshIntervalMs);
+
+    return () => {
+      window.clearInterval(timerId);
+    };
+  }, [enabled, refreshIntervalMs, softReload]);
 
   return {
     items,
@@ -141,11 +237,6 @@ export function useCursorFeed({
     hasMore,
     isLoadingMore,
     loadMoreRef,
-    reload: () => {
-      setItems([]);
-      setNextCursor(null);
-      setHasMore(true);
-      fetchPage({ append: false, cursor: null });
-    }
+    reload: () => reloadFeed({ forceFresh: true, preserveItems: false })
   };
 }

@@ -48,10 +48,12 @@ async function getValidFollowUsers(match, relationField) {
   await cleanupOrphanedFollowRelations(match, relationField);
 
   const relations = await Follow.find(match)
-    .populate(relationField, 'username avatar bio')
+    .populate(relationField, 'username avatar bio accountStatus')
     .sort({ createdAt: -1 });
 
-  return relations.map((item) => item[relationField]).filter(Boolean);
+  return relations
+    .map((item) => item[relationField])
+    .filter((user) => user && user.accountStatus !== 'permanently-banned');
 }
 
 async function getSavedContentByIds(contentIds) {

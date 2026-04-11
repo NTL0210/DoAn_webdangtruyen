@@ -274,14 +274,14 @@ export default function CreateArtworkPage() {
             className="editor-upload-input"
           />
           <p className="text-xs text-slate-400 mt-2">
-            Upload images directly from your device. Max 10 files, 10MB each. Files are checked by byte header before upload and again on the server.
+            Upload images directly from your device. Max 10 files, 10MB each. Feed and search surfaces will use a compressed preview, while the full artwork page keeps the original quality.
           </p>
           <div className="mt-4 space-y-3">
             <div className="rounded-[1.75rem] border border-slate-800 bg-slate-950/50 p-4">
               <div className="mb-3 flex items-center justify-between gap-3">
                 <div>
                   <p className="text-sm font-medium text-slate-200">Review image order before publishing</p>
-                  <p className="text-xs text-slate-400">The first image becomes the main preview users see in feeds and on the artwork page.</p>
+                  <p className="text-xs text-slate-400">The first image becomes the main preview users see in feeds, while the detail page still shows the full original image.</p>
                 </div>
                 <div className="rounded-full border border-slate-700 bg-slate-900 px-3 py-1 text-xs text-slate-300">
                   {imageItems.length}/10 images

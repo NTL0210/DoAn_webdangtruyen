@@ -19,11 +19,11 @@
   body.light {
     color-scheme: light;
     @apply text-slate-800;
-    background-color: #f4efe6;
+    background-color: #efe9e0;
     background-image:
-      radial-gradient(circle at top left, rgba(255, 255, 255, 0.92), transparent 36%),
-      radial-gradient(circle at top right, rgba(226, 232, 240, 0.48), transparent 28%),
-      linear-gradient(180deg, #f8f4ee 0%, #ece7df 100%);
+      radial-gradient(circle at top left, rgba(255, 255, 255, 0.84), transparent 34%),
+      radial-gradient(circle at top right, rgba(191, 219, 254, 0.22), transparent 24%),
+      linear-gradient(180deg, #f7f2eb 0%, #ebe4da 100%);
     background-attachment: fixed;
   }
 
@@ -40,9 +40,9 @@
 
   /* Panel/Card component - light mode */
   .light .panel {
-    border-color: rgba(148, 163, 184, 0.24);
-    background: linear-gradient(180deg, rgba(255, 251, 247, 0.92) 0%, rgba(246, 241, 235, 0.9) 100%);
-    box-shadow: 0 18px 45px rgba(148, 163, 184, 0.14), 0 3px 10px rgba(15, 23, 42, 0.05);
+    border-color: rgba(148, 163, 184, 0.22);
+    background: linear-gradient(180deg, rgba(252, 248, 242, 0.94) 0%, rgba(244, 237, 229, 0.92) 100%);
+    box-shadow: 0 18px 45px rgba(148, 163, 184, 0.12), 0 3px 10px rgba(15, 23, 42, 0.045);
     backdrop-filter: blur(16px);
   }
 
@@ -51,8 +51,41 @@
   }
 
   .light .panel-soft {
+    border-color: rgba(148, 163, 184, 0.18);
+    background: rgba(250, 244, 237, 0.8);
+  }
+
+  .app-overlay-card {
+    @apply rounded-[28px] border border-slate-700 bg-slate-900/95 p-6 text-slate-100 shadow-2xl;
+  }
+
+  .light .app-overlay-card {
+    border-color: rgba(148, 163, 184, 0.24);
+    background:
+      radial-gradient(circle at top right, rgba(255, 255, 255, 0.7), transparent 28%),
+      linear-gradient(180deg, rgba(252, 248, 242, 0.98) 0%, rgba(244, 237, 229, 0.97) 100%);
+    color: #334155;
+    box-shadow: 0 24px 56px rgba(148, 163, 184, 0.14), 0 8px 18px rgba(15, 23, 42, 0.05);
+  }
+
+  .app-overlay-surface {
+    @apply rounded-3xl border border-slate-800 bg-slate-950/50 p-4;
+  }
+
+  .light .app-overlay-surface {
     border-color: rgba(148, 163, 184, 0.2);
-    background: rgba(255, 250, 244, 0.78);
+    background: rgba(247, 241, 233, 0.92);
+  }
+
+  .app-overlay-input {
+    @apply w-full rounded-3xl border border-slate-700 bg-slate-950/70 px-4 py-3 text-sm text-slate-100 outline-none transition focus:border-brand focus:ring-2 focus:ring-brand/30;
+  }
+
+  .light .app-overlay-input {
+    border-color: rgba(148, 163, 184, 0.24);
+    background: rgba(250, 245, 238, 0.98);
+    color: #0f172a;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.82);
   }
 
   /* Input base style - dark mode */
@@ -561,8 +594,8 @@
 
   .light .surface-search {
     color: #64748b;
-    border-color: rgba(148, 163, 184, 0.34);
-    background: rgba(244, 239, 232, 0.96);
+    border-color: rgba(148, 163, 184, 0.28);
+    background: rgba(247, 241, 233, 0.96);
     box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.75);
   }
 
@@ -581,12 +614,12 @@
 
   .light .theme-toggle {
     color: #64748b;
-    border-color: rgba(148, 163, 184, 0.34);
-    background: rgba(250, 246, 240, 0.9);
+    border-color: rgba(148, 163, 184, 0.3);
+    background: rgba(249, 243, 235, 0.92);
   }
 
   .light .theme-toggle:hover {
-    background: rgba(237, 231, 223, 0.95);
+    background: rgba(242, 234, 225, 0.96);
     color: #334155;
   }
 
@@ -612,7 +645,7 @@
   }
 
   .light .sidebar-link:hover {
-    background: rgba(226, 232, 240, 0.58);
+    background: rgba(226, 232, 240, 0.44);
     color: #1e293b;
   }
 
@@ -904,6 +937,22 @@
     background: rgba(2, 6, 23, 0.78);
   }
 
+  .feed-media-quality-badge {
+    @apply absolute right-3 top-3 inline-flex items-center rounded-full border px-2.5 py-1 text-[11px] font-semibold uppercase tracking-[0.18em] backdrop-blur;
+  }
+
+  .feed-media-quality-badge-ultra {
+    border-color: rgba(192, 132, 252, 0.4);
+    background: rgba(147, 51, 234, 0.22);
+    color: #f5d0fe;
+  }
+
+  .feed-media-quality-badge-standard {
+    border-color: rgba(52, 211, 153, 0.34);
+    background: rgba(16, 185, 129, 0.18);
+    color: #d1fae5;
+  }
+
   .feed-media-more {
     @apply absolute inset-0 flex items-center justify-center text-3xl font-semibold text-white;
     background: rgba(2, 6, 23, 0.58);
@@ -940,9 +989,9 @@
   }
 
   .light .feed-column {
-    border-color: rgba(148, 163, 184, 0.28);
-    background: linear-gradient(180deg, rgba(255, 251, 247, 0.96) 0%, rgba(247, 242, 236, 0.95) 100%);
-    box-shadow: 0 28px 64px rgba(148, 163, 184, 0.16);
+    border-color: rgba(148, 163, 184, 0.24);
+    background: linear-gradient(180deg, rgba(252, 247, 240, 0.97) 0%, rgba(245, 238, 230, 0.96) 100%);
+    box-shadow: 0 28px 64px rgba(148, 163, 184, 0.13);
   }
 
   .light .feed-tabs,
@@ -955,7 +1004,7 @@
   }
 
   .light .feed-tabs {
-    background: rgba(250, 246, 240, 0.84);
+    background: rgba(248, 242, 234, 0.9);
   }
 
   .light .feed-tab-slider {
@@ -999,13 +1048,13 @@
   }
 
   .light .feed-card:hover {
-    background: rgba(226, 232, 240, 0.34);
+    background: rgba(231, 229, 228, 0.36);
   }
 
   .light .feed-filter-chip,
   .light .feed-cta-secondary {
-    border-color: rgba(148, 163, 184, 0.3);
-    background: rgba(250, 246, 240, 0.86);
+    border-color: rgba(148, 163, 184, 0.26);
+    background: rgba(248, 242, 234, 0.9);
     color: #475569;
   }
 
@@ -1013,18 +1062,18 @@
   .light .feed-cta-secondary:hover,
   .light .feed-open-link:hover,
   .light .feed-action-button:hover {
-    background: rgba(226, 232, 240, 0.48);
+    background: rgba(231, 229, 228, 0.46);
     color: #0f172a;
   }
 
   .light .feed-media {
     border-color: rgba(148, 163, 184, 0.22);
-    background: rgba(241, 235, 227, 0.88);
+    background: rgba(240, 232, 223, 0.88);
   }
 
   .light .feed-media-grid {
     border-color: rgba(148, 163, 184, 0.22);
-    background: rgba(241, 235, 227, 0.88);
+    background: rgba(240, 232, 223, 0.88);
   }
 
   .light .feed-media-tile {
@@ -1035,6 +1084,18 @@
     border-color: rgba(15, 23, 42, 0.08);
     background: rgba(255, 255, 255, 0.78);
     color: #0f172a;
+  }
+
+  .light .feed-media-quality-badge-ultra {
+    border-color: rgba(168, 85, 247, 0.22);
+    background: rgba(250, 245, 255, 0.94);
+    color: #7e22ce;
+  }
+
+  .light .feed-media-quality-badge-standard {
+    border-color: rgba(16, 185, 129, 0.22);
+    background: rgba(236, 253, 245, 0.94);
+    color: #047857;
   }
 
   .light .feed-media-more {
@@ -1274,8 +1335,8 @@
 
   .light .detail-post-card {
     border-color: rgba(148, 163, 184, 0.24);
-    background: rgba(255, 251, 247, 0.96);
-    box-shadow: 0 20px 40px rgba(148, 163, 184, 0.1);
+    background: rgba(251, 246, 238, 0.97);
+    box-shadow: 0 20px 40px rgba(148, 163, 184, 0.09);
   }
 
   .light .detail-post-toolbar,

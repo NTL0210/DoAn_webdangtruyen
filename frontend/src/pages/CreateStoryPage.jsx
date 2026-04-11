@@ -279,7 +279,7 @@ export default function CreateStoryPage() {
             className="editor-upload-input"
           />
           <p className="text-xs text-slate-400 mt-2">
-            You can skip images entirely or upload extra visuals directly from your device. Files are checked by byte header before upload and again on the server.
+            You can skip images entirely or upload extra visuals directly from your device. Feed surfaces use compressed previews first, and the detail page keeps the original file quality.
           </p>
           <div className="mt-4 rounded-[1.75rem] border border-slate-800 bg-slate-950/50 p-4">
             <div className="mb-3 flex items-center justify-between gap-3">

@@ -62,6 +62,7 @@ const notificationSchema = new mongoose.Schema({
 
 // Create compound index for querying unread notifications
 notificationSchema.index({ recipient: 1, read: 1 });
+notificationSchema.index({ recipient: 1, createdAt: -1 });
 // Index for sorting by date
 notificationSchema.index({ createdAt: -1 });
 

@@ -1,13 +1,8 @@
 import { parseTagsInput } from '../utils/hashtags.js';
+import { sanitizeInlineText, sanitizeUserText } from '../utils/textSanitizer.js';
 
-// Simple HTML/JS sanitization function
-function sanitizeText(text) {
-  if (!text) return text;
-  // Remove script tags and event handlers
-  return text
-    .replace(/<script\b[^<]*(?:(?!<\/script>)<[^<]*)*<\/script>/gi, '')
-    .replace(/on\w+\s*=\s*["'][^"']*["']/gi, '')
-    .replace(/javascript:/gi, '');
+function sanitizeText(text, options) {
+  return sanitizeUserText(text, options);
 }
 
 // Validate email format
@@ -44,9 +39,11 @@ function validateRequiredHashtags(tagsInput) {
 // Validate registration input
 export function validateRegistration(req, res, next) {
   const { username, email, password } = req.body;
+  const sanitizedUsername = sanitizeInlineText(username);
+  const sanitizedEmail = sanitizeInlineText(email).toLowerCase();
 
   // Check required fields
-  if (!username || !email || !password) {
+  if (!sanitizedUsername || !sanitizedEmail || !password) {
     return res.status(400).json({
       success: false,
       error: {
@@ -57,7 +54,7 @@ export function validateRegistration(req, res, next) {
   }
 
   // Validate email format
-  if (!isValidEmail(email)) {
+  if (!isValidEmail(sanitizedEmail)) {
     return res.status(400).json({
       success: false,
       error: {
@@ -81,7 +78,7 @@ export function validateRegistration(req, res, next) {
   }
 
   // Validate username length
-  if (username.length > 50) {
+  if (sanitizedUsername.length > 50) {
     return res.status(400).json({
       success: false,
       error: {
@@ -91,6 +88,9 @@ export function validateRegistration(req, res, next) {
       }
     });
   }
+
+  req.body.username = sanitizedUsername;
+  req.body.email = sanitizedEmail;
 
   next();
 }
@@ -132,7 +132,7 @@ export function validateProfileUpdate(req, res, next) {
       });
     }
 
-    req.body.username = sanitizeText(username);
+    req.body.username = sanitizeInlineText(username);
   }
 
   if (email !== undefined) {
@@ -147,7 +147,7 @@ export function validateProfileUpdate(req, res, next) {
       });
     }
 
-    req.body.email = sanitizeText(email).toLowerCase();
+    req.body.email = sanitizeInlineText(email).toLowerCase();
   }
 
   if (bio !== undefined) {
@@ -162,7 +162,7 @@ export function validateProfileUpdate(req, res, next) {
       });
     }
 
-    req.body.bio = sanitizeText(bio);
+    req.body.bio = sanitizeText(bio, { preserveLineBreaks: true });
   }
 
   if (twoFactorEnabled !== undefined) {
@@ -217,7 +217,7 @@ export function validateProfileUpdate(req, res, next) {
   }
 
   if (membershipTitle !== undefined) {
-    const normalizedTitle = sanitizeText(String(membershipTitle).trim());
+    const normalizedTitle = sanitizeInlineText(String(membershipTitle).trim());
 
     if (!normalizedTitle) {
       return res.status(400).json({
@@ -245,7 +245,7 @@ export function validateProfileUpdate(req, res, next) {
   }
 
   if (membershipDescription !== undefined) {
-    const normalizedDescription = sanitizeText(String(membershipDescription));
+    const normalizedDescription = sanitizeText(String(membershipDescription), { preserveLineBreaks: true });
 
     if (normalizedDescription.length > 500) {
       return res.status(400).json({
@@ -269,7 +269,7 @@ export function validateProfileUpdate(req, res, next) {
         .map((item) => item.trim());
 
     const normalizedBenefits = rawBenefits
-      .map((item) => sanitizeText(String(item).trim()))
+      .map((item) => sanitizeInlineText(String(item).trim()))
       .filter(Boolean);
 
     if (normalizedBenefits.length > 8) {
@@ -340,10 +340,10 @@ export function validateStory(req, res, next) {
   }
 
   // Sanitize text inputs
-  req.body.title = sanitizeText(title);
-  req.body.content = sanitizeText(content);
+  req.body.title = sanitizeInlineText(title);
+  req.body.content = sanitizeText(content, { preserveLineBreaks: true });
   if (req.body.description) {
-    req.body.description = sanitizeText(req.body.description);
+    req.body.description = sanitizeText(req.body.description, { preserveLineBreaks: true });
   }
   req.body.tags = tagValidation.tags;
 
@@ -418,9 +418,9 @@ export function validateArtwork(req, res, next) {
   }
 
   // Sanitize text inputs
-  req.body.title = sanitizeText(title);
+  req.body.title = sanitizeInlineText(title);
   if (req.body.description) {
-    req.body.description = sanitizeText(req.body.description);
+    req.body.description = sanitizeText(req.body.description, { preserveLineBreaks: true });
   }
   req.body.tags = tagValidation.tags;
 
@@ -456,7 +456,18 @@ export function validateComment(req, res, next) {
   }
 
   // Sanitize text
-  req.body.text = sanitizeText(text);
+  req.body.text = sanitizeText(text, { preserveLineBreaks: true });
+
+  if (!req.body.text) {
+    return res.status(400).json({
+      success: false,
+      error: {
+        code: 'VALIDATION_ERROR',
+        message: 'Comment text is required',
+        field: 'text'
+      }
+    });
+  }
 
   next();
 }
@@ -488,6 +499,8 @@ export function validateReport(req, res, next) {
       }
     });
   }
+
+  req.body.reason = sanitizeText(reason, { preserveLineBreaks: true });
 
   next();
 }
